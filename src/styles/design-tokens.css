@@ -1,0 +1,78 @@
+/* NOMAD POCKET Design Tokens */
+
+@layer base {
+  :root {
+    /* Primary Colors */
+    --primary-blue: #004ea7;
+    --primary-blue-light: #5898ff;
+    --primary-blue-lighter: #176bda;
+    --primary-blue-pale: #d8e9fd;
+
+    /* Text Colors */
+    --text-primary: #18202a;
+    --text-secondary: #6c7b8e;
+    --text-tertiary: #64748b;
+    --text-muted: #9a9a9a;
+
+    /* Background Colors */
+    --bg-main: #f4f4f7;
+    --bg-dark: #18202a;
+    --bg-dark-secondary: #33445a;
+    --bg-light: #e6e8f1;
+    --bg-white: #ffffff;
+
+    /* Accent Colors */
+    --accent-red: #ff786b;
+    --accent-red-dark: #d40000;
+    --accent-blue-light: #86aeed;
+    --accent-yellow: #ffd979;
+    --accent-orange: #ff9f73;
+    --accent-green: #99d276;
+    --accent-gray: #aeafaf;
+
+    /* Category Colors - Expenses */
+    --category-housing: #62b0fe;
+    --category-food: #b37cda;
+    --category-mart: #ff9183;
+    --category-vehicle: #fe9e59;
+    --category-tax: #75cd10;
+
+    /* Category Colors - Income */
+    --category-income-1: #b2d5ff;
+    --category-income-2: #ffd7aa;
+    --category-income-3: #cade9f;
+    --category-income-4: #dfc3f7;
+    --category-income-5: #f9c6c6;
+    --category-income-6: #c4e9e1;
+    --category-income-7: #ebebeb;
+
+    /* Border Colors */
+    --border-light: #e6e8f1;
+    --border-table: #d8e9fd;
+    --border-card: rgba(226, 232, 240, 0.6);
+    --border-divider: #e4e5e9;
+
+    /* Spacing */
+    --spacing-xs: 4px;
+    --spacing-sm: 8px;
+    --spacing-md: 12px;
+    --spacing-lg: 16px;
+    --spacing-xl: 24px;
+    --spacing-2xl: 32px;
+
+    /* Border Radius */
+    --radius-sm: 4px;
+    --radius-md: 10px;
+    --radius-lg: 12px;
+    --radius-xl: 24px;
+    --radius-2xl: 32px;
+    --radius-full: 9999px;
+
+    /* Shadows */
+    --shadow-sm: 0px 1px 2px 0px rgba(0, 0, 0, 0.05);
+    --shadow-md: 2px 2px 5px 0px rgba(0, 0, 0, 0.1);
+    --shadow-lg: 4px 4px 8px 0px rgba(25, 28, 30, 0.16);
+    --shadow-xl: 0px 8px 24px 0px rgba(25, 28, 30, 0.04);
+    --shadow-inset: inset 0px 2px 4px 0px rgba(0, 0, 0, 0.05);
+  }
+}

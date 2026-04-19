@@ -1,0 +1,217 @@
+/* Pretendard — Korean variable font (CDN) — @import must come first */
+@import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css');
+
+@import 'tailwindcss';
+@import 'tw-animate-css';
+
+/* Dark mode variant */
+@custom-variant dark (&:is(.dark *));
+
+/* ─────────────────────────────────────────────
+   Tailwind theme extension — Nomad Pocket tokens
+   ───────────────────────────────────────────── */
+@theme inline {
+  /* Fonts */
+  --font-pretendard: 'Pretendard Variable', Pretendard, -apple-system, BlinkMacSystemFont, 'Apple SD Gothic Neo', sans-serif;
+  --font-inter: 'Inter', sans-serif;
+
+  /* Primary */
+  --color-primary-blue: #004ea7;
+  --color-primary-blue-light: #5898ff;
+  --color-primary-blue-lighter: #176bda;
+  --color-primary-blue-pale: #d8e9fd;
+
+  /* Text */
+  --color-text-primary: #18202a;
+  --color-text-secondary: #6c7b8e;
+  --color-text-muted: #9a9a9a;
+
+  /* Backgrounds */
+  --color-bg-main: #f4f4f7;
+  --color-bg-dark: #18202a;
+  --color-bg-dark-secondary: #33445a;
+  --color-bg-light: #e6e8f1;
+  --color-bg-white: #ffffff;
+
+  /* Accents */
+  --color-accent-red: #ff786b;
+  --color-accent-red-dark: #d40000;
+  --color-accent-blue-light: #86aeed;
+  --color-accent-yellow: #ffd979;
+  --color-accent-orange: #ff9f73;
+  --color-accent-green: #99d276;
+  --color-accent-gray: #aeafaf;
+
+  /* Borders */
+  --color-border-light: #e6e8f1;
+  --color-border-table: #d8e9fd;
+  --color-border-divider: #e4e5e9;
+
+  /* shadcn/ui system colors */
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-input-background: var(--input-background);
+  --color-switch-background: var(--switch-background);
+  --color-ring: var(--ring);
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+}
+
+/* ─────────────────────────────────────────────
+   Base layer — CSS custom properties
+   ───────────────────────────────────────────── */
+@layer base {
+  :root {
+    --font-size: 16px;
+
+    /* ── shadcn/ui theme variables ── */
+    --background: #ffffff;
+    --foreground: oklch(0.145 0 0);
+    --card: #ffffff;
+    --card-foreground: oklch(0.145 0 0);
+    --popover: oklch(1 0 0);
+    --popover-foreground: oklch(0.145 0 0);
+    --primary: #030213;
+    --primary-foreground: oklch(1 0 0);
+    --secondary: oklch(0.95 0.0058 264.53);
+    --secondary-foreground: #030213;
+    --muted: #ececf0;
+    --muted-foreground: #717182;
+    --accent: #e9ebef;
+    --accent-foreground: #030213;
+    --destructive: #d4183d;
+    --destructive-foreground: #ffffff;
+    --border: rgba(0, 0, 0, 0.1);
+    --input: transparent;
+    --input-background: #f3f3f5;
+    --switch-background: #cbced4;
+    --font-weight-medium: 500;
+    --font-weight-normal: 400;
+    --ring: oklch(0.708 0 0);
+    --chart-1: oklch(0.646 0.222 41.116);
+    --chart-2: oklch(0.6 0.118 184.704);
+    --chart-3: oklch(0.398 0.07 227.392);
+    --chart-4: oklch(0.828 0.189 84.429);
+    --chart-5: oklch(0.769 0.188 70.08);
+    --radius: 0.625rem;
+    --sidebar: oklch(0.985 0 0);
+    --sidebar-foreground: oklch(0.145 0 0);
+    --sidebar-primary: #030213;
+    --sidebar-primary-foreground: oklch(0.985 0 0);
+    --sidebar-accent: oklch(0.97 0 0);
+    --sidebar-accent-foreground: oklch(0.205 0 0);
+    --sidebar-border: oklch(0.922 0 0);
+    --sidebar-ring: oklch(0.708 0 0);
+
+    /* ── Nomad Pocket design tokens ── */
+    --primary-blue: #004ea7;
+    --primary-blue-light: #5898ff;
+    --primary-blue-lighter: #176bda;
+    --primary-blue-pale: #d8e9fd;
+    --text-primary: #18202a;
+    --text-secondary: #6c7b8e;
+    --text-tertiary: #64748b;
+    --text-muted: #9a9a9a;
+    --bg-main: #f4f4f7;
+    --bg-dark: #18202a;
+    --bg-dark-secondary: #33445a;
+    --bg-light: #e6e8f1;
+    --bg-white: #ffffff;
+    --accent-red: #ff786b;
+    --accent-red-dark: #d40000;
+    --accent-blue-light: #86aeed;
+    --accent-yellow: #ffd979;
+    --accent-orange: #ff9f73;
+    --accent-green: #99d276;
+    --accent-gray: #aeafaf;
+    --border-light: #e6e8f1;
+    --border-table: #d8e9fd;
+    --border-card: rgba(226, 232, 240, 0.6);
+    --border-divider: #e4e5e9;
+    --spacing-xs: 4px;
+    --spacing-sm: 8px;
+    --spacing-md: 12px;
+    --spacing-lg: 16px;
+    --spacing-xl: 24px;
+    --spacing-2xl: 32px;
+    --shadow-sm: 0px 1px 2px 0px rgba(0, 0, 0, 0.05);
+    --shadow-md: 2px 2px 5px 0px rgba(0, 0, 0, 0.1);
+    --shadow-lg: 4px 4px 8px 0px rgba(25, 28, 30, 0.16);
+    --shadow-xl: 0px 8px 24px 0px rgba(25, 28, 30, 0.04);
+    --shadow-inset: inset 0px 2px 4px 0px rgba(0, 0, 0, 0.05);
+  }
+
+  .dark {
+    --background: oklch(0.145 0 0);
+    --foreground: oklch(0.985 0 0);
+    --card: oklch(0.145 0 0);
+    --card-foreground: oklch(0.985 0 0);
+    --popover: oklch(0.145 0 0);
+    --popover-foreground: oklch(0.985 0 0);
+    --primary: oklch(0.985 0 0);
+    --primary-foreground: oklch(0.205 0 0);
+    --secondary: oklch(0.269 0 0);
+    --secondary-foreground: oklch(0.985 0 0);
+    --muted: oklch(0.269 0 0);
+    --muted-foreground: oklch(0.708 0 0);
+    --accent: oklch(0.269 0 0);
+    --accent-foreground: oklch(0.985 0 0);
+    --destructive: oklch(0.396 0.141 25.723);
+    --destructive-foreground: oklch(0.637 0.237 25.331);
+    --border: oklch(0.269 0 0);
+    --input: oklch(0.269 0 0);
+    --ring: oklch(0.439 0 0);
+    --sidebar: oklch(0.205 0 0);
+    --sidebar-foreground: oklch(0.985 0 0);
+    --sidebar-primary: oklch(0.488 0.243 264.376);
+    --sidebar-primary-foreground: oklch(0.985 0 0);
+    --sidebar-accent: oklch(0.269 0 0);
+    --sidebar-accent-foreground: oklch(0.985 0 0);
+    --sidebar-border: oklch(0.269 0 0);
+    --sidebar-ring: oklch(0.439 0 0);
+  }
+
+  * {
+    @apply border-border outline-ring/50;
+  }
+
+  html {
+    font-size: var(--font-size);
+  }
+
+  body {
+    @apply bg-background text-foreground;
+    font-family: 'Pretendard Variable', Pretendard, -apple-system, BlinkMacSystemFont, 'Apple SD Gothic Neo', sans-serif;
+  }
+}
