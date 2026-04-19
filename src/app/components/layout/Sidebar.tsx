@@ -49,7 +49,7 @@ function UserPanel({
         >
           {user.name.charAt(0).toUpperCase()}
         </div>
-        <div className="min-w-0 flex-1">
+        <div className="min-w-0 flex-1 py-[6px]">
           <p className="font-['Pretendard_Variable',sans-serif] truncate text-[13px] font-semibold leading-tight text-white">
             {user.name}
           </p>
