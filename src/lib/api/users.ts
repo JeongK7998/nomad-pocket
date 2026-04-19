@@ -33,6 +33,14 @@ export async function updateProfile(id: string, updates: { name?: string; pin_ha
   return data as Profile
 }
 
+export async function updateAllProfilesPinHash(pinHash: string | null): Promise<void> {
+  const { error } = await supabase
+    .from('profiles')
+    .update({ pin_hash: pinHash })
+    .not('id', 'is', null)
+  if (error) throw error
+}
+
 export async function deleteProfile(id: string): Promise<void> {
   const { error } = await supabase.from('profiles').delete().eq('id', id)
   if (error) throw error

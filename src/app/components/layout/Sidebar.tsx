@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { Settings, X, LogOut } from 'lucide-react'
+import { Settings, X, LogOut, RefreshCcw } from 'lucide-react'
 import { IconDashboard } from '@/app/components/icons/IconDashboard'
 import { IconTransactions } from '@/app/components/icons/IconTransactions'
 import { IconBudget } from '@/app/components/icons/IconBudget'
@@ -15,47 +15,73 @@ const NAV_ITEMS = [
   { href: '/transactions', label: 'Transactions', icon: IconTransactions },
   { href: '/budget',       label: 'Budget',       icon: IconBudget       },
   { href: '/manage',       label: 'Manage',       icon: IconManage       },
+  { href: '/settings',     label: 'Settings',     icon: Settings         },
 ]
 
 interface SidebarProps {
   isOpen?: boolean
   onClose?: () => void
   currentUser?: UserSession | null
-  onSwitchUser?: () => void
+  canCycleUser?: boolean
+  onCycleUser?: () => void
+  onLogout?: () => void
 }
 
-function UserBadge({ user, onSwitch }: { user: UserSession; onSwitch?: () => void }) {
+function UserPanel({
+  user,
+  canCycleUser,
+  onCycleUser,
+  onLogout,
+}: {
+  user: UserSession
+  canCycleUser?: boolean
+  onCycleUser?: () => void
+  onLogout?: () => void
+}) {
   const color = getAvatarColor(user.id, user.color)
   return (
-    <div className="flex items-center gap-[10px] px-[12px] py-[8px]">
-      <div
-        style={{ backgroundColor: color }}
-        className="w-[32px] h-[32px] rounded-full flex items-center justify-center text-white font-bold text-[13px] flex-shrink-0"
-      >
-        {user.name.charAt(0).toUpperCase()}
-      </div>
-      <div className="flex-1 min-w-0">
-        <p className="font-['Pretendard_Variable',sans-serif] text-[13px] font-semibold text-white truncate leading-tight">
-          {user.name}
-        </p>
-        <p className="font-['Pretendard_Variable',sans-serif] text-[10px] text-[#6c7b8e] uppercase tracking-[0.5px] leading-tight">
-          현재 사용자
-        </p>
-      </div>
-      {onSwitch && (
-        <button
-          onClick={onSwitch}
-          title="사용자 전환"
-          className="w-[28px] h-[28px] rounded-full bg-[#33445a] hover:bg-[#4a5f7a] flex items-center justify-center transition-colors flex-shrink-0"
+    <div className="w-full px-[12px] pt-[12px]">
+      <div className="mb-[12px] h-[1px] bg-[#33445a]" />
+      <div className="mb-[10px] flex items-center gap-[10px] px-[12px]">
+        <div
+          style={{ backgroundColor: color }}
+          className="flex h-[34px] w-[34px] flex-shrink-0 items-center justify-center rounded-full text-[13px] font-bold text-white"
         >
-          <LogOut size={12} className="text-[#6c7b8e]" />
+          {user.name.charAt(0).toUpperCase()}
+        </div>
+        <div className="min-w-0 flex-1">
+          <p className="font-['Pretendard_Variable',sans-serif] truncate text-[13px] font-semibold leading-tight text-white">
+            {user.name}
+          </p>
+          <p className="font-['Pretendard_Variable',sans-serif] mt-[2px] text-[10px] uppercase tracking-[0.5px] text-[#6c7b8e]">
+            current user
+          </p>
+        </div>
+      </div>
+
+      <div className="overflow-hidden rounded-[5px] border border-[#33445a]">
+        <button
+          onClick={onCycleUser}
+          disabled={!canCycleUser}
+          className={`flex w-full items-center justify-center gap-[8px] px-[12px] py-[10px] text-center transition-colors ${canCycleUser ? 'text-white hover:bg-[#33445a]' : 'cursor-not-allowed text-[#6c7b8e]'}`}
+        >
+          <RefreshCcw size={12} />
+          <span className="font-['Pretendard_Variable',sans-serif] text-[12px] font-semibold">사용자 전환</span>
         </button>
-      )}
+        <div className="h-[1px] bg-[#33445a]" />
+        <button
+          onClick={onLogout}
+          className="flex w-full items-center justify-center gap-[8px] px-[12px] py-[10px] text-center text-white transition-colors hover:bg-[#33445a]"
+        >
+          <LogOut size={12} />
+          <span className="font-['Pretendard_Variable',sans-serif] text-[12px] font-semibold">로그아웃</span>
+        </button>
+      </div>
     </div>
   )
 }
 
-export function Sidebar({ isOpen = false, onClose, currentUser, onSwitchUser }: SidebarProps) {
+export function Sidebar({ isOpen = false, onClose, currentUser, canCycleUser, onCycleUser, onLogout }: SidebarProps) {
   const pathname = usePathname()
 
   const isActive = (href: string) => {
@@ -111,37 +137,17 @@ export function Sidebar({ isOpen = false, onClose, currentUser, onSwitchUser }: 
           </div>
         </div>
 
-        {/* 하단: 사용자 + Settings + 버전 */}
+        {/* 하단: 사용자 + 버전 */}
         <div className="relative shrink-0 w-full px-[12px]">
           <div className="content-stretch flex flex-col gap-[4px] items-start relative w-full">
-
-            {/* 현재 사용자 */}
             {currentUser && (
-              <>
-                <div className="w-full px-[12px] mb-[4px]">
-                  <div className="h-[1px] bg-[#33445a]" />
-                </div>
-                <UserBadge user={currentUser} onSwitch={onSwitchUser} />
-                <div className="w-full px-[12px] mb-[4px]">
-                  <div className="h-[1px] bg-[#33445a]" />
-                </div>
-              </>
+              <UserPanel
+                user={currentUser}
+                canCycleUser={canCycleUser}
+                onCycleUser={onCycleUser}
+                onLogout={onLogout}
+              />
             )}
-
-            <Link
-              href="/settings"
-              onClick={onClose}
-              className={`relative shrink-0 w-full rounded-[100px] transition-all
-                ${pathname === '/settings' ? 'bg-[#33445a]' : 'hover:bg-[#33445a]/40'}`}
-            >
-              <div className="content-stretch flex gap-[12px] items-center px-[24px] py-[12px] relative w-full">
-                <Settings size={20} className={pathname === '/settings' ? 'text-white' : 'text-[#6c7b8e]'} />
-                <span className={`font-['Pretendard_Variable',sans-serif] text-[18px] tracking-[-0.4px] leading-[24px] whitespace-nowrap
-                  ${pathname === '/settings' ? 'font-semibold text-white' : 'font-medium text-[#6c7b8e]'}`}>
-                  Settings
-                </span>
-              </div>
-            </Link>
 
             <div className="px-[24px] py-[8px]">
               <p className="font-['Pretendard_Variable',sans-serif] font-normal text-[11px] text-[#6c7b8e] tracking-[0.5px]">

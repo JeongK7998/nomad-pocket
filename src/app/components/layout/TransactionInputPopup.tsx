@@ -5,8 +5,9 @@ import { X, Plus, Loader2, Lock } from 'lucide-react'
 import {
   getCategories, getSubcategories,
   getPaymentMethods, getRegions, getTags, getCurrencies,
-  createTransaction, createFixedItem,
+  createTransaction, createFixedItem, deactivateFixedItem,
 } from '@/lib/api'
+import { formatLocalDate } from '@/lib/date'
 import type { Category, Subcategory, PaymentMethod, Region, Tag, Currency, FixedItem } from '@/types/database'
 
 const FONT = "font-['Pretendard_Variable',sans-serif]"
@@ -100,7 +101,7 @@ export function TransactionInputPopup({ onClose, onSaved, defaultType = 'expense
 
   // ── 폼 상태 (fixedItem이 있으면 초기값 주입) ───────────────
   const [txType,     setTxType]     = useState<'expense' | 'income'>(fixedItem?.type ?? defaultType)
-  const [date,       setDate]       = useState(defaultDate ?? new Date().toISOString().slice(0, 10))
+  const [date,       setDate]       = useState(defaultDate ?? formatLocalDate())
   const [catId,      setCatId]      = useState(fixedItem?.category_id    ?? '')
   const [subId,      setSubId]      = useState(fixedItem?.subcategory_id ?? '')
   const [desc,       setDesc]       = useState(fixedItem?.description    ?? '')
@@ -196,9 +197,30 @@ export function TransactionInputPopup({ onClose, onSaved, defaultType = 'expense
     setSaving(true)
     setError(null)
 
+    let createdFixedItemId: string | null = null
+
     try {
       const rawAmount = Number(amount)
       const finalKrw  = currency === 'KRW' ? rawAmount : (krwAmount ?? rawAmount)
+      let linkedFixedItemId: string | null = isFromFixed ? fixedItem!.id : null
+
+      // 일반 입력에서 고정항목 체크 시, 먼저 fixed_items를 만들고
+      // 같은 저장 건의 transaction에 fixed_item_id를 연결해 dim placeholder와 스위치되게 한다.
+      if (!isFromFixed && isFixed) {
+        const createdFixedItem = await createFixedItem({
+          type:               txType,
+          category_id:        catId,
+          subcategory_id:     subId,
+          description:        desc,
+          amount:             finalKrw,
+          currency,
+          payment_method_id:  paymentId || null,
+          day_of_month:       new Date(date).getDate(),
+          is_active:          true,
+        })
+        createdFixedItemId = createdFixedItem.id
+        linkedFixedItemId = createdFixedItem.id
+      }
 
       await createTransaction({
         type:               txType,
@@ -215,27 +237,19 @@ export function TransactionInputPopup({ onClose, onSaved, defaultType = 'expense
         region_id:          regionId   || null,
         tag_ids:            tagIds,
         is_fixed:           isFromFixed ? true : isFixed,
-        fixed_item_id:      isFromFixed ? fixedItem!.id : null,
+        fixed_item_id:      linkedFixedItemId,
       })
-
-      // 고정항목 신규 등록 (일반 입력 + 고정 체크 시만)
-      if (!isFromFixed && isFixed) {
-        await createFixedItem({
-          type:               txType,
-          category_id:        catId,
-          subcategory_id:     subId,
-          description:        desc,
-          amount:             finalKrw,
-          currency,
-          payment_method_id:  paymentId || null,
-          day_of_month:       new Date(date).getDate(),
-          is_active:          true,
-        })
-      }
 
       onSaved?.()
       onClose()
     } catch (e) {
+      if (createdFixedItemId) {
+        try {
+          await deactivateFixedItem(createdFixedItemId)
+        } catch (rollbackError) {
+          console.error('Fixed item rollback failed:', rollbackError)
+        }
+      }
       setError('저장 중 오류가 발생했습니다. 다시 시도해 주세요.')
       console.error(e)
     } finally {
