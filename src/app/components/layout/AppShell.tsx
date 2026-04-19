@@ -99,7 +99,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   }
 
   function handleCycleUser() {
-    if (availableUsers.length <= 1) return
+    if (!currentUser || availableUsers.length <= 1) return
     const currentIndex = availableUsers.findIndex((user) => user.id === currentUser.id)
     const nextUser = availableUsers[(currentIndex + 1) % availableUsers.length] ?? availableUsers[0]
     persistCurrentUser(nextUser)
