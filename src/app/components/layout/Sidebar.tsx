@@ -59,19 +59,18 @@ function UserPanel({
         </div>
       </div>
 
-      <div className="overflow-hidden rounded-[5px] border border-[#33445a]">
+      <div className="flex flex-col gap-[8px]">
         <button
           onClick={onCycleUser}
           disabled={!canCycleUser}
-          className={`flex w-full items-center justify-center gap-[8px] px-[12px] py-[10px] text-center transition-colors ${canCycleUser ? 'text-white hover:bg-[#33445a]' : 'cursor-not-allowed text-[#6c7b8e]'}`}
+          className={`flex w-full items-center justify-center gap-[8px] rounded-[15px] border border-[#33445a] px-[12px] py-[10px] text-center transition-colors ${canCycleUser ? 'text-white hover:bg-[#33445a]' : 'cursor-not-allowed text-[#6c7b8e]'}`}
         >
           <RefreshCcw size={12} />
           <span className="font-['Pretendard_Variable',sans-serif] text-[12px] font-semibold">사용자 전환</span>
         </button>
-        <div className="h-[1px] bg-[#33445a]" />
         <button
           onClick={onLogout}
-          className="flex w-full items-center justify-center gap-[8px] px-[12px] py-[10px] text-center text-white transition-colors hover:bg-[#33445a]"
+          className="flex w-full items-center justify-center gap-[8px] rounded-[15px] border border-[#000000] bg-black px-[12px] py-[10px] text-center text-white transition-colors hover:bg-[#111111]"
         >
           <LogOut size={12} />
           <span className="font-['Pretendard_Variable',sans-serif] text-[12px] font-semibold">로그아웃</span>
