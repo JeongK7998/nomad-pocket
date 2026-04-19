@@ -63,14 +63,14 @@ function UserPanel({
         <button
           onClick={onCycleUser}
           disabled={!canCycleUser}
-          className={`flex w-full items-center justify-center gap-[8px] rounded-[15px] border border-[#33445a] px-[12px] py-[10px] text-center transition-colors ${canCycleUser ? 'text-white hover:bg-[#33445a]' : 'cursor-not-allowed text-[#6c7b8e]'}`}
+          className={`flex w-full items-center justify-center gap-[8px] rounded-[10px] border border-[#33445a] px-[12px] py-[10px] text-center transition-colors ${canCycleUser ? 'text-white hover:bg-[#33445a]' : 'cursor-not-allowed text-[#6c7b8e]'}`}
         >
           <RefreshCcw size={12} />
           <span className="font-['Pretendard_Variable',sans-serif] text-[12px] font-semibold">사용자 전환</span>
         </button>
         <button
           onClick={onLogout}
-          className="flex w-full items-center justify-center gap-[8px] rounded-[15px] border border-[#000000] bg-black px-[12px] py-[10px] text-center text-white transition-colors hover:bg-[#111111]"
+          className="flex w-full items-center justify-center gap-[8px] rounded-[10px] border border-[#000000] bg-black px-[12px] py-[10px] text-center text-white transition-colors hover:bg-[#111111]"
         >
           <LogOut size={12} />
           <span className="font-['Pretendard_Variable',sans-serif] text-[12px] font-semibold">로그아웃</span>
