@@ -3,7 +3,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import dynamic from 'next/dynamic'
 import IncomeBreakdown from '@/app/components/dashboard/IncomeBreakdown'
-import { GlobalTransactionFab } from '@/app/components/layout/GlobalTransactionFab'
 import {
   fetchMasterData, fetchDashboardData, getISOWeek,
   type DashDataset, type DashBar, type MasterData,
@@ -450,8 +449,6 @@ export default function DashboardPage() {
         <TopSpending data={dataset.spending} scrollable={false} />
 
       </div>
-
-      <GlobalTransactionFab onSaved={loadData} />
 
     </div>
   )

@@ -3,15 +3,13 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import { ChevronLeft, ChevronRight, Pencil, Trash2, Loader2 } from 'lucide-react'
 import {
-  getTransactions, deleteTransaction, updateTransaction,
+  getTransactions, deleteTransaction,
   getCategories, getSubcategories,
   getFixedItems,
 } from '@/lib/api'
 import { getProfiles, type Profile } from '@/lib/api/users'
 import { getAvatarColor } from '@/lib/userContext'
-import { GlobalTransactionFab } from '@/app/components/layout/GlobalTransactionFab'
 import { TransactionInputPopup } from '@/app/components/layout/TransactionInputPopup'
-import { formatLocalDate } from '@/lib/date'
 import type { Transaction as DBTransaction, Category, Subcategory, FixedItem } from '@/types/database'
 
 const FONT = "font-['Pretendard_Variable',sans-serif]"
@@ -55,7 +53,7 @@ function getDateRange(mode: TxMode, year: number, month: number, week: number, d
       const d = new Date(year, month-1, 1)
       d.setDate(d.getDate() + (week-1)*7 - d.getDay())
       const end = new Date(d); end.setDate(d.getDate()+6)
-      const iso = (dt: Date) => formatLocalDate(dt)
+      const iso = (dt: Date) => dt.toISOString().slice(0,10)
       return { from: iso(d), to: iso(end) }
     }
     case 'DAILY': {
@@ -445,56 +443,6 @@ export default function TransactionsPage() {
   const [fixedItems,  setFixedItems]  = useState<FixedItem[]>([])
   const [loading,     setLoading]     = useState(true)
 
-  const backfillLegacyFixedLinks = useCallback(async (txs: DBTransaction[], fixed: FixedItem[]) => {
-    const fixedByKey = new Map<string, FixedItem[]>()
-
-    for (const item of fixed) {
-      const key = [
-        item.type,
-        item.category_id,
-        item.subcategory_id,
-        item.description.trim(),
-        String(item.day_of_month ?? ''),
-      ].join('::')
-
-      const existing = fixedByKey.get(key) ?? []
-      existing.push(item)
-      fixedByKey.set(key, existing)
-    }
-
-    const patched = await Promise.all(
-      txs.map(async (tx) => {
-        if (!tx.is_fixed || tx.fixed_item_id) return tx
-
-        const txDate = new Date(tx.date + 'T00:00:00')
-        const key = [
-          tx.type,
-          tx.category_id,
-          tx.subcategory_id,
-          tx.description.trim(),
-          String(txDate.getDate()),
-        ].join('::')
-
-        const candidates = fixedByKey.get(key) ?? []
-        if (candidates.length !== 1) return tx
-
-        const matchedFixed = candidates[0]
-        try {
-          const updated = await updateTransaction(tx.id, {
-            fixed_item_id: matchedFixed.id,
-            is_fixed: true,
-          })
-          return updated
-        } catch (error) {
-          console.error('Legacy fixed link backfill failed:', error)
-          return tx
-        }
-      })
-    )
-
-    return patched
-  }, [])
-
   // ── 마스터 데이터 1회 로드 ─────────────────────────────────
   useEffect(() => {
     Promise.all([getCategories(), getSubcategories(), getProfiles()]).then(([cats, subs, profiles]) => {
@@ -510,15 +458,14 @@ export default function TransactionsPage() {
     setLoading(true)
     const dbType   = tab === '지출' ? 'expense' : 'income'
     const { from, to } = getDateRange(mode, year, month, week, day)
-    const [rawTxs, fixed] = await Promise.all([
+    const [txs, fixed] = await Promise.all([
       getTransactions({ type: dbType, dateFrom: from, dateTo: to }),
       getFixedItems(dbType),
     ])
-    const txs = await backfillLegacyFixedLinks(rawTxs, fixed)
     setDbTxs(txs)
     setFixedItems(fixed)
     setLoading(false)
-  }, [tab, mode, year, month, week, day, backfillLegacyFixedLinks])
+  }, [tab, mode, year, month, week, day])
 
   useEffect(() => { load() }, [load])
 
@@ -604,7 +551,8 @@ export default function TransactionsPage() {
   }
 
   // 고정항목 섹션 보여줄지 (미입력 있거나 등록된 고정항목이 있을 때)
-  const showFixedSection = dimRows.length > 0 || rows.some(r => r.isFixed)
+  const showFixedSection = tab === '지출' &&
+    (dimRows.length > 0 || rows.some(r => r.isFixed))
 
   const fixedRows   = rows.filter(r => r.isFixed)
   const regularRows = rows.filter(r => !r.isFixed)
@@ -709,8 +657,6 @@ export default function TransactionsPage() {
 
         </div>
       )}
-
-      <GlobalTransactionFab onSaved={load} />
 
       {/* 고정항목 입력 팝업 */}
       {fixedPopupItem && (

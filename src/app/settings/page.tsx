@@ -5,7 +5,7 @@ import {
   ChevronRight, Database, Sliders, Info,
   Download, Upload, Trash2, Lock, Users,
   Calendar, X, Eye, EyeOff, CheckCircle2, AlertTriangle, LayoutDashboard,
-  Plus, Pencil,
+  Plus, Pencil, LogOut,
 } from 'lucide-react'
 import {
   exportAllDataAsJSON,
@@ -17,13 +17,13 @@ import {
   getProfiles,
   createProfile,
   updateProfile,
-  updateAllProfilesPinHash,
   deleteProfile,
   type Profile,
 } from '@/lib/api/users'
 import {
   getCurrentUser,
   setCurrentUser,
+  clearCurrentUser,
   getAvatarColor,
   type UserSession,
 } from '@/lib/userContext'
@@ -159,31 +159,38 @@ function ModalOverlay({ onClose, children }: { onClose: () => void; children: Re
 // ── 사용자 추가/수정 모달 ─────────────────────────────────────
 
 function UserEditModal({
-  mode, profile, sharedPinHash, onClose, onDone,
+  mode, profile, onClose, onDone,
 }: {
   mode: 'add' | 'edit'
   profile?: Profile
-  sharedPinHash?: string | null
   onClose: () => void
   onDone: (p: Profile) => void
 }) {
   const [name, setName] = useState(profile?.name ?? '')
   const [color, setColor] = useState<string>(profile?.color ?? USER_COLORS[0])
+  const [pin, setPin] = useState('')
+  const [pinConfirm, setPinConfirm] = useState('')
+  const [showPin, setShowPin] = useState(false)
+  const [changePin, setChangePin] = useState(mode === 'add')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [done, setDone] = useState(false)
 
   async function handleSave() {
     if (!name.trim()) { setError('이름을 입력하세요'); return }
+    if (changePin && pin && pin.length < 4) { setError('비밀번호는 4자리 이상이어야 합니다'); return }
+    if (changePin && pin && pin !== pinConfirm) { setError('비밀번호가 일치하지 않습니다'); return }
 
     setLoading(true)
     setError('')
     try {
       let result: Profile
       if (mode === 'add') {
-        result = await createProfile(name.trim(), sharedPinHash ?? undefined, color)
+        const pinHash = pin ? btoa(pin) : undefined
+        result = await createProfile(name.trim(), pinHash, color)
       } else {
-        const updates: { name?: string; color?: string } = { name: name.trim(), color }
+        const updates: { name?: string; pin_hash?: string | null; color?: string } = { name: name.trim(), color }
+        if (changePin) updates.pin_hash = pin ? btoa(pin) : null
         result = await updateProfile(profile!.id, updates)
       }
       setDone(true)
@@ -247,111 +254,54 @@ function UserEditModal({
             </div>
           </div>
 
+          {mode === 'edit' && (
+            <label className="flex items-center gap-[10px] cursor-pointer">
+              <div
+                onClick={() => setChangePin(v => !v)}
+                className={`w-[36px] h-[20px] rounded-full transition-colors duration-200 flex-shrink-0 relative
+                  ${changePin ? 'bg-[#004ea7]' : 'bg-[#d8dae6]'}`}
+              >
+                <span className={`absolute top-[2px] w-[16px] h-[16px] bg-white rounded-full shadow transition-transform duration-200
+                  ${changePin ? 'left-[18px]' : 'left-[2px]'}`} />
+              </div>
+              <span className={`${FONT} text-[13px] text-[#18202a]`}>비밀번호 변경</span>
+            </label>
+          )}
+
+          {changePin && (
+            <>
+              <div className="flex flex-col gap-[6px]">
+                <label className={`${FONT} text-[11px] font-semibold text-[#6c7b8e] uppercase tracking-[0.8px]`}>
+                  {mode === 'edit' ? '새 비밀번호 (비워두면 제거)' : '비밀번호 (선택)'}
+                </label>
+                <div className="relative">
+                  <input
+                    type={showPin ? 'text' : 'password'}
+                    value={pin}
+                    onChange={e => { setPin(e.target.value); setError('') }}
+                    placeholder="4자리 이상"
+                    className={`${FONT} w-full border border-[#e4e5e9] rounded-[10px] px-[14px] py-[10px] text-[14px] text-[#18202a] outline-none focus:border-[#5898ff] pr-[40px]`}
+                  />
+                  <button onClick={() => setShowPin(v => !v)} className="absolute right-[12px] top-1/2 -translate-y-1/2 text-[#6c7b8e]">
+                    {showPin ? <EyeOff size={16} /> : <Eye size={16} />}
+                  </button>
+                </div>
+              </div>
+              {pin && (
+                <input
+                  type={showPin ? 'text' : 'password'}
+                  value={pinConfirm}
+                  onChange={e => { setPinConfirm(e.target.value); setError('') }}
+                  placeholder="비밀번호 확인"
+                  className={`${FONT} border border-[#e4e5e9] rounded-[10px] px-[14px] py-[10px] text-[14px] text-[#18202a] outline-none focus:border-[#5898ff]`}
+                />
+              )}
+            </>
+          )}
+
           {error && <p className={`${FONT} text-[12px] text-[#ff786b]`}>{error}</p>}
         </div>
 
-        <div className="flex gap-[8px]">
-          <button onClick={onClose}
-            className={`${FONT} flex-1 font-semibold text-[13px] text-[#6c7b8e] bg-[#f4f4f7] rounded-[10px] py-[10px]`}>
-            취소
-          </button>
-          <button
-            onClick={handleSave}
-            disabled={loading}
-            className={`${FONT} flex-1 font-semibold text-[13px] text-white bg-[#004ea7] rounded-[10px] py-[10px] ${loading ? 'opacity-50' : ''}`}>
-            {loading ? '저장 중...' : '저장'}
-          </button>
-        </div>
-      </div>
-    </ModalOverlay>
-  )
-}
-
-function AppPasswordModal({
-  currentHash,
-  onClose,
-  onDone,
-}: {
-  currentHash: string | null
-  onClose: () => void
-  onDone: () => void
-}) {
-  const [password, setPassword] = useState('')
-  const [passwordConfirm, setPasswordConfirm] = useState('')
-  const [showPassword, setShowPassword] = useState(false)
-  const [loading, setLoading] = useState(false)
-  const [error, setError] = useState('')
-  const [done, setDone] = useState(false)
-
-  async function handleSave() {
-    if (password.length < 4) {
-      setError('공통 비밀번호는 4자리 이상이어야 합니다')
-      return
-    }
-    if (password !== passwordConfirm) {
-      setError('비밀번호가 일치하지 않습니다')
-      return
-    }
-
-    setLoading(true)
-    setError('')
-    try {
-      await updateAllProfilesPinHash(btoa(password))
-      setDone(true)
-      setTimeout(() => { onDone(); onClose() }, 800)
-    } catch (e) {
-      setError(e instanceof Error ? e.message : '저장 실패')
-    }
-    setLoading(false)
-  }
-
-  if (done) {
-    return (
-      <ModalOverlay onClose={onClose}>
-        <div className="bg-white rounded-[20px] shadow-xl w-[360px] p-[32px] flex flex-col items-center gap-[16px]">
-          <CheckCircle2 size={40} className="text-[#99d276]" />
-          <p className={`${FONT} font-bold text-[16px] text-[#18202a]`}>공통 비밀번호가 변경되었습니다</p>
-        </div>
-      </ModalOverlay>
-    )
-  }
-
-  return (
-    <ModalOverlay onClose={onClose}>
-      <div className="bg-white rounded-[20px] shadow-xl w-[380px] p-[32px] flex flex-col gap-[20px]">
-        <div className="flex items-center justify-between">
-          <h2 className={`${FONT} font-bold text-[16px] text-[#18202a]`}>공통 비밀번호 설정</h2>
-          <button onClick={onClose}><X size={18} className="text-[#6c7b8e]" /></button>
-        </div>
-        <div className="rounded-[12px] bg-[#f7fbff] p-[14px]">
-          <p className={`${FONT} text-[12px] leading-[1.6] text-[#6c7b8e]`}>
-            이 비밀번호는 모든 사용자에게 공통으로 적용되며, 로그아웃 후 다시 입장할 때 사용됩니다.
-            {currentHash ? ' 변경 시 모든 사용자에 즉시 반영됩니다.' : ''}
-          </p>
-        </div>
-        <div className="flex flex-col gap-[12px]">
-          <div className="relative">
-            <input
-              type={showPassword ? 'text' : 'password'}
-              value={password}
-              onChange={(e) => { setPassword(e.target.value); setError('') }}
-              placeholder="새 공통 비밀번호"
-              className={`${FONT} w-full border border-[#e4e5e9] rounded-[10px] px-[14px] py-[10px] text-[14px] text-[#18202a] outline-none focus:border-[#5898ff] pr-[40px]`}
-            />
-            <button onClick={() => setShowPassword((prev) => !prev)} className="absolute right-[12px] top-1/2 -translate-y-1/2 text-[#6c7b8e]">
-              {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
-            </button>
-          </div>
-          <input
-            type={showPassword ? 'text' : 'password'}
-            value={passwordConfirm}
-            onChange={(e) => { setPasswordConfirm(e.target.value); setError('') }}
-            onKeyDown={(e) => e.key === 'Enter' && handleSave()}
-            placeholder="비밀번호 확인"
-            className={`${FONT} border border-[#e4e5e9] rounded-[10px] px-[14px] py-[10px] text-[14px] text-[#18202a] outline-none focus:border-[#5898ff]`}
-          />
-          {error && <p className={`${FONT} text-[12px] text-[#ff786b]`}>{error}</p>}
-        </div>
         <div className="flex gap-[8px]">
           <button onClick={onClose}
             className={`${FONT} flex-1 font-semibold text-[13px] text-[#6c7b8e] bg-[#f4f4f7] rounded-[10px] py-[10px]`}>
@@ -649,7 +599,7 @@ function Toast({ message, type, onDone }: { message: string; type: 'success' | '
 
 // ── 메인 페이지 ─────────────────────────────────────────────
 
-type ModalType = 'add-user' | 'edit-user' | 'delete-user' | 'delete-all' | 'import-replace' | 'import-add' | 'changelog' | 'app-password' | null
+type ModalType = 'add-user' | 'edit-user' | 'delete-user' | 'delete-all' | 'import-replace' | 'import-add' | 'changelog' | null
 
 export default function SettingsPage() {
   const [hydrated, setHydrated] = useState(false)
@@ -663,7 +613,6 @@ export default function SettingsPage() {
   const [targetProfile, setTargetProfile] = useState<Profile | null>(null)
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null)
   const [exporting, setExporting] = useState<'excel' | 'json' | null>(null)
-  const sharedPinHash = profiles.find((profile) => profile.pin_hash)?.pin_hash ?? null
 
   const loadProfiles = useCallback(async () => {
     try {
@@ -692,11 +641,16 @@ export default function SettingsPage() {
   }
 
   function switchToUser(profile: Profile) {
-    const session: UserSession = { id: profile.id, name: profile.name, color: profile.color ?? undefined }
+    const session: UserSession = { id: profile.id, name: profile.name }
     setCurrentUser(session)
     setUser(session)
     showToast(`${profile.name}으로 전환되었습니다`)
     // 페이지 데이터 새로고침
+    window.location.href = '/'
+  }
+
+  function handleSwitchUser() {
+    clearCurrentUser()
     window.location.href = '/'
   }
 
@@ -774,7 +728,7 @@ export default function SettingsPage() {
                     )}
                   </div>
                   <p className={`${FONT} text-[11px] text-[#6c7b8e] mt-[1px]`}>
-                    작성자 표시와 사용자 전환에 사용
+                    {profile.pin_hash ? '비밀번호 보호됨' : '비밀번호 없음'}
                   </p>
                 </div>
                 <div className="flex items-center gap-[6px]">
@@ -784,7 +738,7 @@ export default function SettingsPage() {
                       title="이 사용자로 전환"
                       className="flex items-center gap-[4px] px-[10px] py-[5px] rounded-[8px] bg-[#f0f4ff] text-[#004ea7] hover:bg-[#dde8ff] transition-colors"
                     >
-                      <Users size={12} />
+                      <LogOut size={12} />
                       <span className={`${FONT} text-[11px] font-semibold`}>전환</span>
                     </button>
                   )}
@@ -821,15 +775,19 @@ export default function SettingsPage() {
           </div>
           <p className={`${FONT} font-semibold text-[13px] text-[#6c7b8e]`}>사용자 추가</p>
         </button>
-      </SettingSection>
 
-      <SettingSection icon={<Lock size={14} />} title="앱 잠금">
-        <SettingRow
-          icon={<Lock size={16} />}
-          label={sharedPinHash ? '공통 비밀번호 변경' : '공통 비밀번호 설정'}
-          sub="로그아웃 후 모든 사용자가 같은 비밀번호로 다시 입장합니다"
-          onClick={() => setModal('app-password')}
-        />
+        {/* 사용자 전환 (로그아웃) */}
+        {profiles.length > 1 && (
+          <>
+            <Divider />
+            <SettingRow
+              icon={<LogOut size={16} />}
+              label="사용자 전환"
+              sub="사용자 선택 화면으로 이동"
+              onClick={handleSwitchUser}
+            />
+          </>
+        )}
       </SettingSection>
 
       {/* ── 데이터 ── */}
@@ -929,19 +887,14 @@ export default function SettingsPage() {
 
       {/* 모달 */}
       {modal === 'add-user' && (
-        <UserEditModal
-          mode="add"
-          sharedPinHash={sharedPinHash}
-          onClose={() => setModal(null)}
-          onDone={() => { loadProfiles(); showToast('사용자가 추가되었습니다') }}
-        />
+        <UserEditModal mode="add" onClose={() => setModal(null)} onDone={() => { loadProfiles(); showToast('사용자가 추가되었습니다') }} />
       )}
       {modal === 'edit-user' && targetProfile && (
         <UserEditModal mode="edit" profile={targetProfile} onClose={() => setModal(null)}
           onDone={(updated) => {
             loadProfiles()
             if (updated.id === currentUser?.id) {
-              const session: UserSession = { id: updated.id, name: updated.name, color: updated.color ?? undefined }
+              const session: UserSession = { id: updated.id, name: updated.name }
               setCurrentUser(session)
               setUser(session)
             }
@@ -956,16 +909,6 @@ export default function SettingsPage() {
       {modal === 'import-replace' && <ImportModal mode="replace" onClose={() => setModal(null)} />}
       {modal === 'import-add' && <ImportModal mode="add" onClose={() => setModal(null)} />}
       {modal === 'changelog' && <ChangelogModal onClose={() => setModal(null)} />}
-      {modal === 'app-password' && (
-        <AppPasswordModal
-          currentHash={sharedPinHash}
-          onClose={() => setModal(null)}
-          onDone={() => {
-            loadProfiles()
-            showToast('공통 비밀번호가 저장되었습니다')
-          }}
-        />
-      )}
 
       {toast && <Toast message={toast.message} type={toast.type} onDone={() => setToast(null)} />}
     </div>
