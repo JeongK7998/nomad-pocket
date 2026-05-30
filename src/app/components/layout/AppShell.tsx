@@ -8,8 +8,15 @@ import { FAB } from './FAB'
 import { TransactionInputPopup } from './TransactionInputPopup'
 import { UserSelectScreen } from './UserSelectScreen'
 import { getCurrencies } from '@/lib/api'
+import { getProfiles } from '@/lib/api/users'
 import { fetchKrwRates } from '@/lib/exchangeRate'
-import { getCurrentUser, clearCurrentUser, type UserSession } from '@/lib/userContext'
+import {
+  getCurrentUser,
+  hasAuthenticatedAccess,
+  clearAccessSession,
+  setCurrentUser as persistCurrentUser,
+  type UserSession,
+} from '@/lib/userContext'
 
 const FONT = "font-['Pretendard_Variable',sans-serif]"
 
@@ -23,18 +30,37 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const [drawerOpen,  setDrawerOpen]  = useState(false)
   const [rateItems,   setRateItems]   = useState<ExchangeRateItem[]>([])
   const [lastUpdated, setLastUpdated] = useState<string | undefined>(undefined)
+  const [availableUsers, setAvailableUsers] = useState<UserSession[]>([])
 
   // 사용자 상태: 'loading' | null(미설정) | UserSession
   const [currentUser, setCurrentUser] = useState<UserSession | null | 'loading'>('loading')
+  const [isAuthenticated, setIsAuthenticated] = useState<boolean | 'loading'>('loading')
 
   // 마운트 시 localStorage에서 현재 사용자 로드
   useEffect(() => {
     setCurrentUser(getCurrentUser())
+    setIsAuthenticated(hasAuthenticatedAccess())
   }, [])
 
   const handleUserSelect = useCallback((user: UserSession) => {
     setCurrentUser(user)
+    setIsAuthenticated(true)
   }, [])
+
+  useEffect(() => {
+    if (!currentUser || currentUser === 'loading' || !isAuthenticated || isAuthenticated === 'loading') return
+    getProfiles()
+      .then((profiles) => {
+        setAvailableUsers(
+          profiles.map((profile) => ({
+            id: profile.id,
+            name: profile.name,
+            color: profile.color ?? undefined,
+          })),
+        )
+      })
+      .catch(() => setAvailableUsers([]))
+  }, [currentUser, isAuthenticated])
 
   useEffect(() => {
     if (!currentUser || currentUser === 'loading') return
@@ -63,13 +89,28 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   }, [])
 
   // 로딩 중 (hydration 전 blank)
-  if (currentUser === 'loading') {
+  if (currentUser === 'loading' || isAuthenticated === 'loading') {
     return <div className="bg-[#f4f4f7] w-full h-dvh" />
   }
 
   // 사용자 미설정 → 사용자 선택 화면
-  if (!currentUser) {
+  if (!currentUser || !isAuthenticated) {
     return <UserSelectScreen onSelect={handleUserSelect} />
+  }
+
+  function handleCycleUser() {
+    if (availableUsers.length <= 1) return
+    const currentIndex = availableUsers.findIndex((user) => user.id === currentUser.id)
+    const nextUser = availableUsers[(currentIndex + 1) % availableUsers.length] ?? availableUsers[0]
+    persistCurrentUser(nextUser)
+    setCurrentUser(nextUser)
+    window.location.reload()
+  }
+
+  function handleLogout() {
+    clearAccessSession()
+    setCurrentUser(null)
+    setIsAuthenticated(false)
   }
 
   return (
@@ -79,10 +120,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         isOpen={drawerOpen}
         onClose={() => setDrawerOpen(false)}
         currentUser={currentUser}
-        onSwitchUser={() => {
-          clearCurrentUser()
-          setCurrentUser(null)
-        }}
+        canCycleUser={availableUsers.length > 1}
+        onCycleUser={handleCycleUser}
+        onLogout={handleLogout}
       />
 
       {drawerOpen && (

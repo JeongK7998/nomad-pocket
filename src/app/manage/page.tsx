@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { Plus, Pencil, Trash2, Check, X, Loader2, RotateCcw, ChevronRight } from 'lucide-react'
+import { GlobalTransactionFab } from '@/app/components/layout/GlobalTransactionFab'
 import {
   getCategories, createCategory, updateCategory, deleteCategory,
   getSubcategories, createSubcategory, updateSubcategory, deleteSubcategory,
@@ -1148,6 +1149,8 @@ export default function ManagePage() {
       <div className="flex-1 overflow-y-auto px-[36px] py-[24px]">
         <ContentPanel menuKey={active} />
       </div>
+
+      <GlobalTransactionFab />
     </div>
   )
 }
