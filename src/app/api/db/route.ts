@@ -67,7 +67,7 @@ function sanitizeProfiles(data: unknown) {
   })
 }
 
-async function hasValidSession(supabase: ReturnType<typeof createClient>) {
+async function hasValidSession(supabase: any) {
   const cookieStore = await cookies()
   const session = cookieStore.get(COOKIE_NAME)?.value
   if (!session) return false
