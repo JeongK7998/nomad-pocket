@@ -1,4 +1,6 @@
 const SESSION_KEY = 'nomad_pocket_user_session'
+const AUTH_KEY = 'nomad_pocket_authenticated'
+const AUTH_VERSION = 'server-v1'
 
 export interface UserSession {
   id: string
@@ -22,6 +24,24 @@ export function setCurrentUser(user: UserSession): void {
 
 export function clearCurrentUser(): void {
   localStorage.removeItem(SESSION_KEY)
+}
+
+export function hasAuthenticatedAccess(): boolean {
+  if (typeof window === 'undefined') return false
+  return localStorage.getItem(AUTH_KEY) === AUTH_VERSION
+}
+
+export function markAuthenticatedAccess(): void {
+  localStorage.setItem(AUTH_KEY, AUTH_VERSION)
+}
+
+export function clearAuthenticatedAccess(): void {
+  localStorage.removeItem(AUTH_KEY)
+}
+
+export function clearAccessSession(): void {
+  clearCurrentUser()
+  clearAuthenticatedAccess()
 }
 
 export function requireUserId(): string {

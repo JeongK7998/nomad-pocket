@@ -3,6 +3,19 @@ import type { Profile } from '@/types/database'
 
 export type { Profile }
 
+export async function authenticateAccess(pin: string): Promise<void> {
+  const response = await fetch('/api/nomad-auth', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    credentials: 'same-origin',
+    body: JSON.stringify({ pin }),
+  })
+  if (!response.ok) {
+    const result = await response.json().catch(() => ({}))
+    throw new Error(result?.error ?? '비밀번호 확인 실패')
+  }
+}
+
 export async function getProfiles(): Promise<Profile[]> {
   const { data, error } = await supabase
     .from('profiles')
@@ -31,6 +44,14 @@ export async function updateProfile(id: string, updates: { name?: string; pin_ha
     .single()
   if (error) throw error
   return data as Profile
+}
+
+export async function updateAllProfilesPinHash(pinHash: string | null): Promise<void> {
+  const { error } = await supabase
+    .from('profiles')
+    .update({ pin_hash: pinHash })
+    .not('id', 'is', null)
+  if (error) throw error
 }
 
 export async function deleteProfile(id: string): Promise<void> {
