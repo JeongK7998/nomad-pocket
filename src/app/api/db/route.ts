@@ -33,6 +33,7 @@ type QueryBody = {
   single?: boolean
 }
 type PinHashRow = Record<'pin_hash', unknown>
+type MutationPayload = Record<string, unknown> | Record<string, unknown>[]
 
 function getServiceClient() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL
@@ -142,10 +143,10 @@ export async function POST(request: Request) {
     if (operation === 'select') {
       query = supabase.from(table).select(columns, body.options)
     } else if (operation === 'insert') {
-      query = supabase.from(table).insert(body.payload)
+      query = supabase.from(table).insert(body.payload as MutationPayload)
       if (body.columns) query = query.select(columns)
     } else if (operation === 'update') {
-      query = supabase.from(table).update(body.payload)
+      query = supabase.from(table).update(body.payload as Record<string, unknown>)
       if (body.columns) query = query.select(columns)
     } else if (operation === 'delete') {
       query = supabase.from(table).delete()
