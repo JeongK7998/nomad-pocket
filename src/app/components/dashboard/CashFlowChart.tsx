@@ -198,7 +198,7 @@ export default function CashFlowChart({ mode, weekPage, selectedRegion, selected
   // ── 모드별 데이터 계산 ──────────────────────────────────────
   const { bars, yTicks, maxVal } = useMemo(() => {
     // 실제 데이터가 주어진 경우 사용
-    if (barsOverride && barsOverride.length > 0) {
+    if (barsOverride) {
       return { bars: barsOverride, ...computeYTicks(barsOverride) }
     }
     // fallback: mock 데이터

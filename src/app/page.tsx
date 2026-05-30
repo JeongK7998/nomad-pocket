@@ -31,12 +31,14 @@ const CURRENT_MONTH = _today.getMonth() + 1
 const CURRENT_DAY   = _today.getDate()
 const CURRENT_WEEK  = getISOWeek(_today)
 
-// ── Budget Goals placeholder ───────────────────────────────
-const BUDGET_GOALS = [
-  { name: 'New Studio Fund',  target: 250_000_000, saved: 160_000_000, pct: 64,  color: '#004EA7', track: '#D8E9FD' },
-  { name: 'Travel Portfolio', target:  12_000_000, saved:  10_560_000, pct: 88,  color: '#FF786B', track: '#E0E0E0' },
-  { name: 'Emergency Fund',   target:  20_000_000, saved:  22_000_000, pct: 110, color: '#d40000', track: '#E0E0E0' },
-]
+const BUDGET_GOALS: Array<{
+  name: string
+  target: number
+  saved: number
+  pct: number
+  color: string
+  track: string
+}> = []
 
 const EMPTY_DATASET: DashDataset = {
   income: 0, expense: 0, net: 0, expBD: [], incBD: [], top5: [], spending: [],

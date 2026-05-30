@@ -9,7 +9,12 @@ import { TransactionInputPopup } from './TransactionInputPopup'
 import { UserSelectScreen } from './UserSelectScreen'
 import { getCurrencies } from '@/lib/api'
 import { fetchKrwRates } from '@/lib/exchangeRate'
-import { getCurrentUser, clearCurrentUser, type UserSession } from '@/lib/userContext'
+import {
+  clearAccessSession,
+  getCurrentUser,
+  hasAuthenticatedAccess,
+  type UserSession,
+} from '@/lib/userContext'
 
 const FONT = "font-['Pretendard_Variable',sans-serif]"
 
@@ -26,18 +31,21 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   // 사용자 상태: 'loading' | null(미설정) | UserSession
   const [currentUser, setCurrentUser] = useState<UserSession | null | 'loading'>('loading')
+  const [isAuthenticated, setIsAuthenticated] = useState<boolean | 'loading'>('loading')
 
   // 마운트 시 localStorage에서 현재 사용자 로드
   useEffect(() => {
     setCurrentUser(getCurrentUser())
+    setIsAuthenticated(hasAuthenticatedAccess())
   }, [])
 
   const handleUserSelect = useCallback((user: UserSession) => {
     setCurrentUser(user)
+    setIsAuthenticated(true)
   }, [])
 
   useEffect(() => {
-    if (!currentUser || currentUser === 'loading') return
+    if (!currentUser || currentUser === 'loading' || !isAuthenticated || isAuthenticated === 'loading') return
     async function loadRates() {
       try {
         const currencies   = await getCurrencies(true)
@@ -52,7 +60,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       } catch { /* 환율 조회 실패 시 무표시 */ }
     }
     loadRates()
-  }, [currentUser])
+  }, [currentUser, isAuthenticated])
 
   useEffect(() => {
     function onResize() {
@@ -63,12 +71,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   }, [])
 
   // 로딩 중 (hydration 전 blank)
-  if (currentUser === 'loading') {
+  if (currentUser === 'loading' || isAuthenticated === 'loading') {
     return <div className="bg-[#f4f4f7] w-full h-dvh" />
   }
 
-  // 사용자 미설정 → 사용자 선택 화면
-  if (!currentUser) {
+  // 사용자 미설정 또는 서버 인증 세션 미생성 → 사용자 선택 화면
+  if (!currentUser || !isAuthenticated) {
     return <UserSelectScreen onSelect={handleUserSelect} />
   }
 
@@ -80,8 +88,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         onClose={() => setDrawerOpen(false)}
         currentUser={currentUser}
         onSwitchUser={() => {
-          clearCurrentUser()
+          clearAccessSession()
           setCurrentUser(null)
+          setIsAuthenticated(false)
         }}
       />
 
