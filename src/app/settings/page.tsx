@@ -5,28 +5,31 @@ import {
   ChevronRight, Database, Sliders, Info,
   Download, Upload, Trash2, Lock, Users,
   Calendar, X, Eye, EyeOff, CheckCircle2, AlertTriangle, LayoutDashboard,
-  Plus, Pencil, LogOut,
+  Plus, Pencil,
 } from 'lucide-react'
 import {
   exportAllDataAsJSON,
   exportAllDataAsExcel,
   importFromJSON,
-  deleteAllData,
+  validateImportJSON,
+  deleteAllTransactionData,
+  deleteAllConfigurationData,
 } from '@/lib/api/settings'
 import {
   getProfiles,
   createProfile,
   updateProfile,
+  updateAllProfilesPinHash,
   deleteProfile,
   type Profile,
 } from '@/lib/api/users'
 import {
   getCurrentUser,
   setCurrentUser,
-  clearCurrentUser,
   getAvatarColor,
   type UserSession,
 } from '@/lib/userContext'
+import { GlobalTransactionFab } from '@/app/components/layout/GlobalTransactionFab'
 
 const FONT = "font-['Pretendard_Variable',sans-serif]"
 const SETTINGS_KEY = 'nomad_pocket_settings'
@@ -159,38 +162,31 @@ function ModalOverlay({ onClose, children }: { onClose: () => void; children: Re
 // ── 사용자 추가/수정 모달 ─────────────────────────────────────
 
 function UserEditModal({
-  mode, profile, onClose, onDone,
+  mode, profile, sharedPinHash, onClose, onDone,
 }: {
   mode: 'add' | 'edit'
   profile?: Profile
+  sharedPinHash?: string | null
   onClose: () => void
   onDone: (p: Profile) => void
 }) {
   const [name, setName] = useState(profile?.name ?? '')
   const [color, setColor] = useState<string>(profile?.color ?? USER_COLORS[0])
-  const [pin, setPin] = useState('')
-  const [pinConfirm, setPinConfirm] = useState('')
-  const [showPin, setShowPin] = useState(false)
-  const [changePin, setChangePin] = useState(mode === 'add')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [done, setDone] = useState(false)
 
   async function handleSave() {
     if (!name.trim()) { setError('이름을 입력하세요'); return }
-    if (changePin && pin && pin.length < 4) { setError('비밀번호는 4자리 이상이어야 합니다'); return }
-    if (changePin && pin && pin !== pinConfirm) { setError('비밀번호가 일치하지 않습니다'); return }
 
     setLoading(true)
     setError('')
     try {
       let result: Profile
       if (mode === 'add') {
-        const pinHash = pin ? btoa(pin) : undefined
-        result = await createProfile(name.trim(), pinHash, color)
+        result = await createProfile(name.trim(), sharedPinHash ?? undefined, color)
       } else {
-        const updates: { name?: string; pin_hash?: string | null; color?: string } = { name: name.trim(), color }
-        if (changePin) updates.pin_hash = pin ? btoa(pin) : null
+        const updates: { name?: string; color?: string } = { name: name.trim(), color }
         result = await updateProfile(profile!.id, updates)
       }
       setDone(true)
@@ -254,54 +250,111 @@ function UserEditModal({
             </div>
           </div>
 
-          {mode === 'edit' && (
-            <label className="flex items-center gap-[10px] cursor-pointer">
-              <div
-                onClick={() => setChangePin(v => !v)}
-                className={`w-[36px] h-[20px] rounded-full transition-colors duration-200 flex-shrink-0 relative
-                  ${changePin ? 'bg-[#004ea7]' : 'bg-[#d8dae6]'}`}
-              >
-                <span className={`absolute top-[2px] w-[16px] h-[16px] bg-white rounded-full shadow transition-transform duration-200
-                  ${changePin ? 'left-[18px]' : 'left-[2px]'}`} />
-              </div>
-              <span className={`${FONT} text-[13px] text-[#18202a]`}>비밀번호 변경</span>
-            </label>
-          )}
-
-          {changePin && (
-            <>
-              <div className="flex flex-col gap-[6px]">
-                <label className={`${FONT} text-[11px] font-semibold text-[#6c7b8e] uppercase tracking-[0.8px]`}>
-                  {mode === 'edit' ? '새 비밀번호 (비워두면 제거)' : '비밀번호 (선택)'}
-                </label>
-                <div className="relative">
-                  <input
-                    type={showPin ? 'text' : 'password'}
-                    value={pin}
-                    onChange={e => { setPin(e.target.value); setError('') }}
-                    placeholder="4자리 이상"
-                    className={`${FONT} w-full border border-[#e4e5e9] rounded-[10px] px-[14px] py-[10px] text-[14px] text-[#18202a] outline-none focus:border-[#5898ff] pr-[40px]`}
-                  />
-                  <button onClick={() => setShowPin(v => !v)} className="absolute right-[12px] top-1/2 -translate-y-1/2 text-[#6c7b8e]">
-                    {showPin ? <EyeOff size={16} /> : <Eye size={16} />}
-                  </button>
-                </div>
-              </div>
-              {pin && (
-                <input
-                  type={showPin ? 'text' : 'password'}
-                  value={pinConfirm}
-                  onChange={e => { setPinConfirm(e.target.value); setError('') }}
-                  placeholder="비밀번호 확인"
-                  className={`${FONT} border border-[#e4e5e9] rounded-[10px] px-[14px] py-[10px] text-[14px] text-[#18202a] outline-none focus:border-[#5898ff]`}
-                />
-              )}
-            </>
-          )}
-
           {error && <p className={`${FONT} text-[12px] text-[#ff786b]`}>{error}</p>}
         </div>
 
+        <div className="flex gap-[8px]">
+          <button onClick={onClose}
+            className={`${FONT} flex-1 font-semibold text-[13px] text-[#6c7b8e] bg-[#f4f4f7] rounded-[10px] py-[10px]`}>
+            취소
+          </button>
+          <button
+            onClick={handleSave}
+            disabled={loading}
+            className={`${FONT} flex-1 font-semibold text-[13px] text-white bg-[#004ea7] rounded-[10px] py-[10px] ${loading ? 'opacity-50' : ''}`}>
+            {loading ? '저장 중...' : '저장'}
+          </button>
+        </div>
+      </div>
+    </ModalOverlay>
+  )
+}
+
+function AppPasswordModal({
+  currentHash,
+  onClose,
+  onDone,
+}: {
+  currentHash: string | null
+  onClose: () => void
+  onDone: () => void
+}) {
+  const [password, setPassword] = useState('')
+  const [passwordConfirm, setPasswordConfirm] = useState('')
+  const [showPassword, setShowPassword] = useState(false)
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState('')
+  const [done, setDone] = useState(false)
+
+  async function handleSave() {
+    if (password.length < 4) {
+      setError('공통 비밀번호는 4자리 이상이어야 합니다')
+      return
+    }
+    if (password !== passwordConfirm) {
+      setError('비밀번호가 일치하지 않습니다')
+      return
+    }
+
+    setLoading(true)
+    setError('')
+    try {
+      await updateAllProfilesPinHash(btoa(password))
+      setDone(true)
+      setTimeout(() => { onDone(); onClose() }, 800)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : '저장 실패')
+    }
+    setLoading(false)
+  }
+
+  if (done) {
+    return (
+      <ModalOverlay onClose={onClose}>
+        <div className="bg-white rounded-[20px] shadow-xl w-[360px] p-[32px] flex flex-col items-center gap-[16px]">
+          <CheckCircle2 size={40} className="text-[#99d276]" />
+          <p className={`${FONT} font-bold text-[16px] text-[#18202a]`}>공통 비밀번호가 변경되었습니다</p>
+        </div>
+      </ModalOverlay>
+    )
+  }
+
+  return (
+    <ModalOverlay onClose={onClose}>
+      <div className="bg-white rounded-[20px] shadow-xl w-[380px] p-[32px] flex flex-col gap-[20px]">
+        <div className="flex items-center justify-between">
+          <h2 className={`${FONT} font-bold text-[16px] text-[#18202a]`}>공통 비밀번호 설정</h2>
+          <button onClick={onClose}><X size={18} className="text-[#6c7b8e]" /></button>
+        </div>
+        <div className="rounded-[12px] bg-[#f7fbff] p-[14px]">
+          <p className={`${FONT} text-[12px] leading-[1.6] text-[#6c7b8e]`}>
+            이 비밀번호는 모든 사용자에게 공통으로 적용되며, 로그아웃 후 다시 입장할 때 사용됩니다.
+            {currentHash ? ' 변경 시 모든 사용자에 즉시 반영됩니다.' : ''}
+          </p>
+        </div>
+        <div className="flex flex-col gap-[12px]">
+          <div className="relative">
+            <input
+              type={showPassword ? 'text' : 'password'}
+              value={password}
+              onChange={(e) => { setPassword(e.target.value); setError('') }}
+              placeholder="새 공통 비밀번호"
+              className={`${FONT} w-full border border-[#e4e5e9] rounded-[10px] px-[14px] py-[10px] text-[14px] text-[#18202a] outline-none focus:border-[#5898ff] pr-[40px]`}
+            />
+            <button onClick={() => setShowPassword((prev) => !prev)} className="absolute right-[12px] top-1/2 -translate-y-1/2 text-[#6c7b8e]">
+              {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+            </button>
+          </div>
+          <input
+            type={showPassword ? 'text' : 'password'}
+            value={passwordConfirm}
+            onChange={(e) => { setPasswordConfirm(e.target.value); setError('') }}
+            onKeyDown={(e) => e.key === 'Enter' && handleSave()}
+            placeholder="비밀번호 확인"
+            className={`${FONT} border border-[#e4e5e9] rounded-[10px] px-[14px] py-[10px] text-[14px] text-[#18202a] outline-none focus:border-[#5898ff]`}
+          />
+          {error && <p className={`${FONT} text-[12px] text-[#ff786b]`}>{error}</p>}
+        </div>
         <div className="flex gap-[8px]">
           <button onClick={onClose}
             className={`${FONT} flex-1 font-semibold text-[13px] text-[#6c7b8e] bg-[#f4f4f7] rounded-[10px] py-[10px]`}>
@@ -365,7 +418,7 @@ function DeleteUserModal({ profile, onClose, onDone }: {
             <p className={`${FONT} font-semibold text-[12px] text-[#ff786b]`}>이 작업은 되돌릴 수 없습니다</p>
           </div>
           <p className={`${FONT} text-[12px] text-[#6c7b8e]`}>
-            <strong>{profile.name}</strong>의 모든 거래내역, 예산, 카테고리 등이 영구 삭제됩니다.
+            <strong>{profile.name}</strong> 사용자 프로필만 삭제됩니다. 거래내역, 예산, 카테고리 등 공유 앱 데이터는 유지됩니다.
           </p>
         </div>
         <div className="flex flex-col gap-[8px]">
@@ -400,17 +453,21 @@ function DeleteUserModal({ profile, onClose, onDone }: {
   )
 }
 
-// ── 전체 데이터 삭제 모달 ─────────────────────────────────────
+// ── 데이터 삭제 모달 ─────────────────────────────────────────
 
-function DeleteAllDataModal({ onClose }: { onClose: () => void }) {
+function DeleteDataModal({ mode, onClose }: { mode: 'transactions' | 'settings'; onClose: () => void }) {
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
   const [result, setResult] = useState<{ success: boolean; message: string } | null>(null)
+  const isTransactionsMode = mode === 'transactions'
 
   async function handleDelete() {
     if (input !== 'DELETE') return
     setLoading(true)
-    const res = await deleteAllData()
+    const res = isTransactionsMode ? await deleteAllTransactionData() : await deleteAllConfigurationData()
+    if (res.success && !isTransactionsMode) {
+      saveSettings(defaultSettings())
+    }
     setResult(res)
     setLoading(false)
   }
@@ -431,7 +488,9 @@ function DeleteAllDataModal({ onClose }: { onClose: () => void }) {
     <ModalOverlay onClose={onClose}>
       <div className="bg-white rounded-[20px] shadow-xl w-[400px] p-[32px] flex flex-col gap-[20px]">
         <div className="flex items-center justify-between">
-          <h2 className={`${FONT} font-bold text-[16px] text-[#ff786b]`}>전체 데이터 삭제</h2>
+          <h2 className={`${FONT} font-bold text-[16px] text-[#ff786b]`}>
+            {isTransactionsMode ? '전체 거래 내역 삭제' : '전체 설정 삭제'}
+          </h2>
           <button onClick={onClose}><X size={18} className="text-[#6c7b8e]" /></button>
         </div>
         <div className="bg-[#fff5f5] rounded-[12px] p-[16px] flex flex-col gap-[8px]">
@@ -439,7 +498,11 @@ function DeleteAllDataModal({ onClose }: { onClose: () => void }) {
             <AlertTriangle size={16} className="text-[#ff786b] flex-shrink-0" />
             <p className={`${FONT} font-semibold text-[13px] text-[#ff786b]`}>이 작업은 되돌릴 수 없습니다</p>
           </div>
-          <p className={`${FONT} text-[12px] text-[#6c7b8e]`}>현재 사용자의 모든 거래 내역, 예산 목표, 카테고리 등이 영구 삭제됩니다.</p>
+          <p className={`${FONT} text-[12px] text-[#6c7b8e]`}>
+            {isTransactionsMode
+              ? '모든 사용자가 함께 보는 거래 내역, 예산 목표, 고정항목이 영구 삭제됩니다.'
+              : '모든 사용자가 함께 쓰는 분류/지출방식/지역/태그와 이 기기의 앱 환경설정이 초기화됩니다.'}
+          </p>
         </div>
         <div className="flex flex-col gap-[8px]">
           <label className={`${FONT} text-[11px] font-semibold text-[#6c7b8e] uppercase tracking-[0.8px]`}>
@@ -453,7 +516,7 @@ function DeleteAllDataModal({ onClose }: { onClose: () => void }) {
           <button onClick={handleDelete} disabled={input !== 'DELETE' || loading}
             className={`${FONT} flex-1 font-semibold text-[13px] text-white rounded-[10px] py-[10px] transition-colors
               ${input === 'DELETE' && !loading ? 'bg-[#ff786b] hover:bg-[#e55a4e]' : 'bg-[#d8dae6] cursor-not-allowed'}`}>
-            {loading ? '삭제 중...' : '전체 삭제'}
+            {loading ? '삭제 중...' : isTransactionsMode ? '거래 삭제' : '설정 삭제'}
           </button>
         </div>
       </div>
@@ -467,7 +530,28 @@ function ImportModal({ mode, onClose }: { mode: 'replace' | 'add'; onClose: () =
   const fileRef = useRef<HTMLInputElement>(null)
   const [loading, setLoading] = useState(false)
   const [result, setResult] = useState<{ success: boolean; message: string; counts?: Record<string, number> } | null>(null)
+  const [pendingImportText, setPendingImportText] = useState<string | null>(null)
+  const [confirmText, setConfirmText] = useState('')
   const isReplace = mode === 'replace'
+
+  async function runImport(text: string, replace: boolean) {
+    setLoading(true)
+    try {
+      if (replace) {
+        await deleteAllTransactionData()
+        await deleteAllConfigurationData()
+        saveSettings(defaultSettings())
+      }
+      const res = await importFromJSON(text)
+      setResult(res)
+    } catch {
+      setResult({ success: false, message: '파일 가져오기 실패' })
+    } finally {
+      setLoading(false)
+      setPendingImportText(null)
+      setConfirmText('')
+    }
+  }
 
   async function handleFile(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0]
@@ -475,13 +559,23 @@ function ImportModal({ mode, onClose }: { mode: 'replace' | 'add'; onClose: () =
     setLoading(true)
     try {
       const text = await file.text()
-      if (isReplace) await deleteAllData()
-      const res = await importFromJSON(text)
-      setResult(res)
+      const validation = validateImportJSON(text)
+      if (!validation.success) {
+        setResult(validation)
+        setLoading(false)
+        return
+      }
+      if (isReplace) {
+        setPendingImportText(text)
+        setConfirmText('')
+        setLoading(false)
+        return
+      }
+      await runImport(text, false)
     } catch {
       setResult({ success: false, message: '파일 읽기 실패' })
+      setLoading(false)
     }
-    setLoading(false)
   }
 
   if (result) {
@@ -506,6 +600,48 @@ function ImportModal({ mode, onClose }: { mode: 'replace' | 'add'; onClose: () =
     )
   }
 
+  if (pendingImportText && isReplace) {
+    return (
+      <ModalOverlay onClose={onClose}>
+        <div className="bg-white rounded-[20px] shadow-xl w-[420px] p-[32px] flex flex-col gap-[18px]">
+          <div className="flex items-center justify-between">
+            <h2 className={`${FONT} font-bold text-[16px] text-[#18202a]`}>전체 데이터 변경 확인</h2>
+            <button onClick={onClose}><X size={18} className="text-[#6c7b8e]" /></button>
+          </div>
+          <div className="bg-[#fff5f5] rounded-[12px] p-[14px] flex flex-col gap-[8px]">
+            <div className="flex items-center gap-[8px]">
+              <AlertTriangle size={15} className="text-[#ff786b] flex-shrink-0" />
+              <p className={`${FONT} font-semibold text-[12px] text-[#ff786b]`}>기존 공유 데이터가 삭제된 뒤 JSON 데이터로 교체됩니다</p>
+            </div>
+            <p className={`${FONT} text-[12px] text-[#6c7b8e]`}>
+              계속하려면 아래 입력칸에 <span className="font-bold text-[#ff786b]">DELETE</span>를 입력하세요.
+            </p>
+          </div>
+          <input
+            value={confirmText}
+            onChange={(e) => setConfirmText(e.target.value)}
+            placeholder="DELETE"
+            className={`${FONT} h-[42px] rounded-[10px] border border-[#e4e5e9] px-[14px] text-[13px] text-[#18202a] outline-none focus:border-[#ff786b]`}
+          />
+          <div className="flex gap-[8px]">
+            <button onClick={() => { setPendingImportText(null); setConfirmText('') }} className={`${FONT} flex-1 rounded-[10px] bg-[#f4f4f7] py-[10px] text-[13px] font-semibold text-[#6c7b8e]`}>
+              파일 다시 선택
+            </button>
+            <button
+              onClick={() => runImport(pendingImportText, true)}
+              disabled={confirmText !== 'DELETE' || loading}
+              className={`${FONT} flex-1 rounded-[10px] py-[10px] text-[13px] font-semibold text-white ${
+                confirmText === 'DELETE' && !loading ? 'bg-[#ff786b]' : 'bg-[#d8dae6] cursor-not-allowed'
+              }`}
+            >
+              {loading ? '변경 중...' : '삭제 후 가져오기'}
+            </button>
+          </div>
+        </div>
+      </ModalOverlay>
+    )
+  }
+
   return (
     <ModalOverlay onClose={onClose}>
       <div className="bg-white rounded-[20px] shadow-xl w-[400px] p-[32px] flex flex-col gap-[20px]">
@@ -517,9 +653,9 @@ function ImportModal({ mode, onClose }: { mode: 'replace' | 'add'; onClose: () =
           <div className="bg-[#fff5f5] rounded-[12px] p-[14px] flex flex-col gap-[6px]">
             <div className="flex items-center gap-[8px]">
               <AlertTriangle size={14} className="text-[#ff786b] flex-shrink-0" />
-              <p className={`${FONT} font-semibold text-[12px] text-[#ff786b]`}>기존 데이터가 모두 삭제됩니다</p>
+              <p className={`${FONT} font-semibold text-[12px] text-[#ff786b]`}>공유 앱 데이터가 모두 삭제됩니다</p>
             </div>
-            <p className={`${FONT} text-[12px] text-[#6c7b8e]`}>JSON 파일의 데이터로 전체를 교체합니다.</p>
+            <p className={`${FONT} text-[12px] text-[#6c7b8e]`}>모든 사용자가 함께 보는 데이터를 삭제한 뒤 JSON 파일의 데이터로 전체를 교체합니다.</p>
           </div>
         ) : (
           <div className="bg-[#f0f4ff] rounded-[12px] p-[14px]">
@@ -599,7 +735,7 @@ function Toast({ message, type, onDone }: { message: string; type: 'success' | '
 
 // ── 메인 페이지 ─────────────────────────────────────────────
 
-type ModalType = 'add-user' | 'edit-user' | 'delete-user' | 'delete-all' | 'import-replace' | 'import-add' | 'changelog' | null
+type ModalType = 'add-user' | 'edit-user' | 'delete-user' | 'delete-transactions' | 'delete-settings' | 'import-replace' | 'import-add' | 'changelog' | 'app-password' | null
 
 export default function SettingsPage() {
   const [hydrated, setHydrated] = useState(false)
@@ -613,6 +749,7 @@ export default function SettingsPage() {
   const [targetProfile, setTargetProfile] = useState<Profile | null>(null)
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null)
   const [exporting, setExporting] = useState<'excel' | 'json' | null>(null)
+  const sharedPinHash = profiles.find((profile) => profile.pin_hash)?.pin_hash ?? null
 
   const loadProfiles = useCallback(async () => {
     try {
@@ -641,16 +778,11 @@ export default function SettingsPage() {
   }
 
   function switchToUser(profile: Profile) {
-    const session: UserSession = { id: profile.id, name: profile.name }
+    const session: UserSession = { id: profile.id, name: profile.name, color: profile.color ?? undefined }
     setCurrentUser(session)
     setUser(session)
     showToast(`${profile.name}으로 전환되었습니다`)
     // 페이지 데이터 새로고침
-    window.location.href = '/'
-  }
-
-  function handleSwitchUser() {
-    clearCurrentUser()
     window.location.href = '/'
   }
 
@@ -728,7 +860,7 @@ export default function SettingsPage() {
                     )}
                   </div>
                   <p className={`${FONT} text-[11px] text-[#6c7b8e] mt-[1px]`}>
-                    {profile.pin_hash ? '비밀번호 보호됨' : '비밀번호 없음'}
+                    작성자 표시와 사용자 전환에 사용
                   </p>
                 </div>
                 <div className="flex items-center gap-[6px]">
@@ -738,7 +870,7 @@ export default function SettingsPage() {
                       title="이 사용자로 전환"
                       className="flex items-center gap-[4px] px-[10px] py-[5px] rounded-[8px] bg-[#f0f4ff] text-[#004ea7] hover:bg-[#dde8ff] transition-colors"
                     >
-                      <LogOut size={12} />
+                      <Users size={12} />
                       <span className={`${FONT} text-[11px] font-semibold`}>전환</span>
                     </button>
                   )}
@@ -775,19 +907,15 @@ export default function SettingsPage() {
           </div>
           <p className={`${FONT} font-semibold text-[13px] text-[#6c7b8e]`}>사용자 추가</p>
         </button>
+      </SettingSection>
 
-        {/* 사용자 전환 (로그아웃) */}
-        {profiles.length > 1 && (
-          <>
-            <Divider />
-            <SettingRow
-              icon={<LogOut size={16} />}
-              label="사용자 전환"
-              sub="사용자 선택 화면으로 이동"
-              onClick={handleSwitchUser}
-            />
-          </>
-        )}
+      <SettingSection icon={<Lock size={14} />} title="앱 잠금">
+        <SettingRow
+          icon={<Lock size={16} />}
+          label={sharedPinHash ? '공통 비밀번호 변경' : '공통 비밀번호 설정'}
+          sub="로그아웃 후 모든 사용자가 같은 비밀번호로 다시 입장합니다"
+          onClick={() => setModal('app-password')}
+        />
       </SettingSection>
 
       {/* ── 데이터 ── */}
@@ -811,7 +939,7 @@ export default function SettingsPage() {
         <SettingRow
           icon={<Upload size={16} />}
           label="전체 데이터 변경하기"
-          sub="JSON 파일로 전체 교체 (기존 데이터 삭제 후 덮어씀)"
+          sub="공유 앱 데이터를 삭제한 뒤 JSON 파일로 전체 교체"
           onClick={() => setModal('import-replace')}
           danger
         />
@@ -825,9 +953,17 @@ export default function SettingsPage() {
         <Divider />
         <SettingRow
           icon={<Trash2 size={16} />}
-          label="전체 데이터 삭제"
-          sub="현재 사용자의 모든 거래 내역과 설정이 삭제됩니다"
-          onClick={() => setModal('delete-all')}
+          label="전체 거래 내역 삭제"
+          sub="모든 사용자의 거래 내역, 예산 목표, 고정항목 삭제"
+          onClick={() => setModal('delete-transactions')}
+          danger
+        />
+        <Divider />
+        <SettingRow
+          icon={<Trash2 size={16} />}
+          label="전체 설정 삭제"
+          sub="공유 분류/지출방식/지역/태그와 이 기기 앱 설정 초기화"
+          onClick={() => setModal('delete-settings')}
           danger
         />
       </SettingSection>
@@ -885,16 +1021,23 @@ export default function SettingsPage() {
 
       <div className="pb-[16px]" />
 
+      <GlobalTransactionFab />
+
       {/* 모달 */}
       {modal === 'add-user' && (
-        <UserEditModal mode="add" onClose={() => setModal(null)} onDone={() => { loadProfiles(); showToast('사용자가 추가되었습니다') }} />
+        <UserEditModal
+          mode="add"
+          sharedPinHash={sharedPinHash}
+          onClose={() => setModal(null)}
+          onDone={() => { loadProfiles(); showToast('사용자가 추가되었습니다') }}
+        />
       )}
       {modal === 'edit-user' && targetProfile && (
         <UserEditModal mode="edit" profile={targetProfile} onClose={() => setModal(null)}
           onDone={(updated) => {
             loadProfiles()
             if (updated.id === currentUser?.id) {
-              const session: UserSession = { id: updated.id, name: updated.name }
+              const session: UserSession = { id: updated.id, name: updated.name, color: updated.color ?? undefined }
               setCurrentUser(session)
               setUser(session)
             }
@@ -905,10 +1048,21 @@ export default function SettingsPage() {
       {modal === 'delete-user' && targetProfile && (
         <DeleteUserModal profile={targetProfile} onClose={() => setModal(null)} onDone={() => { loadProfiles(); showToast('사용자가 삭제되었습니다') }} />
       )}
-      {modal === 'delete-all' && <DeleteAllDataModal onClose={() => setModal(null)} />}
+      {modal === 'delete-transactions' && <DeleteDataModal mode="transactions" onClose={() => setModal(null)} />}
+      {modal === 'delete-settings' && <DeleteDataModal mode="settings" onClose={() => setModal(null)} />}
       {modal === 'import-replace' && <ImportModal mode="replace" onClose={() => setModal(null)} />}
       {modal === 'import-add' && <ImportModal mode="add" onClose={() => setModal(null)} />}
       {modal === 'changelog' && <ChangelogModal onClose={() => setModal(null)} />}
+      {modal === 'app-password' && (
+        <AppPasswordModal
+          currentHash={sharedPinHash}
+          onClose={() => setModal(null)}
+          onDone={() => {
+            loadProfiles()
+            showToast('공통 비밀번호가 저장되었습니다')
+          }}
+        />
+      )}
 
       {toast && <Toast message={toast.message} type={toast.type} onDone={() => setToast(null)} />}
     </div>

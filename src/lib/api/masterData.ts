@@ -3,6 +3,17 @@ import type { PaymentMethod, Region, Tag, Currency } from '@/types/database'
 
 // ─── 지출방식 ──────────────────────────────────────────────────
 
+function isMissingOwnerColumnError(error: unknown) {
+  if (!error || typeof error !== 'object') return false
+  const maybeError = error as { code?: string; message?: string }
+  return maybeError.code === 'PGRST204' && (maybeError.message ?? '').includes("'owner'")
+}
+
+function withoutOwner<T extends { owner?: string | null }>(payload: T) {
+  const { owner: _owner, ...rest } = payload
+  return rest
+}
+
 export async function getPaymentMethods() {
   const { data, error } = await supabase
     .from('payment_methods')
@@ -12,23 +23,51 @@ export async function getPaymentMethods() {
   return data as PaymentMethod[]
 }
 
-export async function createPaymentMethod(payload: { name: string; color: string; initial: string }) {
-  const { data, error } = await supabase
+export async function createPaymentMethod(payload: { name: string; color: string; initial: string; owner?: string | null }) {
+  const normalizedPayload = { ...payload, owner: payload.owner?.trim() || null }
+  let { data, error } = await supabase
     .from('payment_methods')
-    .insert(payload)
+    .insert(normalizedPayload)
     .select()
     .single()
+
+  if (error && isMissingOwnerColumnError(error)) {
+    const fallback = await supabase
+      .from('payment_methods')
+      .insert(withoutOwner(normalizedPayload))
+      .select()
+      .single()
+    data = fallback.data
+    error = fallback.error
+  }
+
   if (error) throw error
   return data as PaymentMethod
 }
 
-export async function updatePaymentMethod(id: string, payload: Partial<{ name: string; color: string; initial: string }>) {
-  const { data, error } = await supabase
+export async function updatePaymentMethod(id: string, payload: Partial<{ name: string; color: string; initial: string; owner: string | null }>) {
+  const nextPayload = {
+    ...payload,
+    ...(payload.owner !== undefined ? { owner: payload.owner?.trim() || null } : {}),
+  }
+  let { data, error } = await supabase
     .from('payment_methods')
-    .update(payload)
+    .update(nextPayload)
     .eq('id', id)
     .select()
     .single()
+
+  if (error && isMissingOwnerColumnError(error)) {
+    const fallback = await supabase
+      .from('payment_methods')
+      .update(withoutOwner(nextPayload))
+      .eq('id', id)
+      .select()
+      .single()
+    data = fallback.data
+    error = fallback.error
+  }
+
   if (error) throw error
   return data as PaymentMethod
 }

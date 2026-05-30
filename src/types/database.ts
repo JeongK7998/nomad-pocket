@@ -2,6 +2,8 @@ export type TransactionType = 'expense' | 'income'
 export type CurrencyCode = 'KRW' | 'USD' | 'JPY' | 'EUR' | 'THB' | 'SGD' | 'AUD' | 'IDR' | string
 export type BudgetPeriodType = 'yearly' | 'monthly' | 'custom'
 export type BudgetFilterType = 'total' | 'category' | 'subcategory' | 'region' | 'tag'
+export type TransactionImportSource = 'sms' | 'image' | 'text' | 'manual'
+export type TransactionImportStatus = 'pending_review' | 'reviewed'
 
 // ─── 테이블 Row 타입 ───────────────────────────────────────────────────────────
 
@@ -9,6 +11,7 @@ export interface Category {
   id: string
   name: string
   type: TransactionType
+  color: string | null
   user_id?: string | null
   created_at: string
 }
@@ -17,6 +20,7 @@ export interface Subcategory {
   id: string
   category_id: string
   name: string
+  emoji: string | null
   user_id?: string | null
   created_at: string
 }
@@ -26,6 +30,7 @@ export interface PaymentMethod {
   name: string
   color: string
   initial: string
+  owner: string | null
   user_id?: string | null
   created_at: string
 }
@@ -72,6 +77,10 @@ export interface Transaction {
   is_fixed: boolean
   fixed_item_id: string | null
   user_id?: string | null
+  import_source?: TransactionImportSource | null
+  import_status?: TransactionImportStatus | null
+  import_confidence?: number | null
+  import_raw_text?: string | null
   created_at: string
 }
 

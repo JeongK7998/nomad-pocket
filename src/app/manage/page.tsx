@@ -1,10 +1,11 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef, type ReactNode } from 'react'
 import { Plus, Pencil, Trash2, Check, X, Loader2, RotateCcw, ChevronRight } from 'lucide-react'
+import { GlobalTransactionFab } from '@/app/components/layout/GlobalTransactionFab'
 import {
   getCategories, createCategory, updateCategory, deleteCategory,
-  getSubcategories, createSubcategory, updateSubcategory, deleteSubcategory,
+  getSubcategories, createSubcategory, updateSubcategory, deleteSubcategory, countCategoryUsages, countSubcategoryUsages, replaceSubcategoryReferencesAndDelete,
   getPaymentMethods, createPaymentMethod, updatePaymentMethod, deletePaymentMethod,
   getRegions, createRegion, deleteRegion, restoreRegion,
   getTags, createTag, deleteTag, restoreTag,
@@ -12,6 +13,9 @@ import {
   getFixedItems, createFixedItem, updateFixedItem, deactivateFixedItem,
   getTransactions,
 } from '@/lib/api'
+import { SUBCATEGORY_EMOJI_GROUPS, formatSubcategoryLabel, recommendSubcategoryEmoji } from '@/lib/subcategoryEmoji'
+import { CATEGORY_PASTEL_COLORS, DEFAULT_CATEGORY_COLOR, getCategoryColor, getSubcategoryThumbnail } from '@/lib/categoryVisuals'
+import { formatPaymentMethodLabel } from '@/lib/paymentMethod'
 import type { Category, Subcategory, PaymentMethod, Region, Tag, Currency, FixedItem } from '@/types/database'
 
 const FONT = "font-['Pretendard_Variable',sans-serif]"
@@ -19,6 +23,7 @@ const INPUT_SM = `border border-[#e4e5e9] rounded-[8px] px-[10px] h-[34px] ${FON
 
 // ── 메뉴 ──────────────────────────────────────────────────────
 type MenuKey = 'categories' | 'payment' | 'region' | 'currency' | 'tags' | 'fixed-expense' | 'fixed-income'
+type MobileManageKey = 'taxonomy' | 'settings' | 'fixed'
 
 const MENU_ITEMS: { key: MenuKey; label: string }[] = [
   { key: 'categories',    label: '대분류 / 소분류' },
@@ -28,6 +33,12 @@ const MENU_ITEMS: { key: MenuKey; label: string }[] = [
   { key: 'tags',          label: '태그' },
   { key: 'fixed-expense', label: '고정지출' },
   { key: 'fixed-income',  label: '고정수입' },
+]
+
+const MOBILE_MENU_ITEMS: { key: MobileManageKey; label: string }[] = [
+  { key: 'taxonomy', label: '대분류 / 소분류' },
+  { key: 'settings', label: '세부설정' },
+  { key: 'fixed', label: '고정' },
 ]
 
 // ── 공통 UI ───────────────────────────────────────────────────
@@ -53,25 +64,80 @@ function Spinner() {
   return <div className="flex items-center justify-center py-[40px]"><Loader2 size={20} className="animate-spin text-[#5898ff]" /></div>
 }
 
+function MobileGroupDivider({ title }: { title: string }) {
+  return (
+    <div className="flex items-center gap-[10px]">
+      <div className="h-px flex-1 bg-[#e6e8f1]" />
+      <span className={`${FONT} text-[11px] font-semibold uppercase tracking-[0.8px] text-[#6c7b8e]`}>{title}</span>
+      <div className="h-px flex-1 bg-[#e6e8f1]" />
+    </div>
+  )
+}
+
 function fmt(n: number) { return '₩' + n.toLocaleString('ko-KR') }
 
-// ── 인라인 이름 편집 입력 ─────────────────────────────────────
-function InlineInput({ value, onSave, onCancel, placeholder = '이름 입력' }: {
-  value: string; onSave: (v: string) => void; onCancel: () => void; placeholder?: string
+function fmtShortDate(date: string | null | undefined) {
+  if (!date) return '-'
+  const d = new Date(date)
+  if (Number.isNaN(d.getTime())) return '-'
+  return `${String(d.getFullYear()).slice(2)}.${String(d.getMonth() + 1).padStart(2, '0')}.${String(d.getDate()).padStart(2, '0')}`
+}
+
+function ModalFrame({ title, description, children, onClose, widthClass = 'max-w-[640px]' }: {
+  title: string
+  description?: string
+  children: ReactNode
+  onClose: () => void
+  widthClass?: string
 }) {
-  const [v, setV] = useState(value)
   return (
-    <div className="flex items-center gap-[6px]">
-      <input
-        autoFocus
-        value={v}
-        onChange={(e) => setV(e.target.value)}
-        onKeyDown={(e) => { if (e.key === 'Enter') onSave(v); if (e.key === 'Escape') onCancel() }}
-        placeholder={placeholder}
-        className={`${INPUT_SM} w-[140px]`}
-      />
-      <button onClick={() => onSave(v)} className="text-[#99D276] hover:opacity-70"><Check size={14} /></button>
-      <button onClick={onCancel} className="text-[#c0c8d4] hover:opacity-70"><X size={14} /></button>
+    <div className="fixed inset-0 z-[110] flex items-center justify-center bg-[rgba(24,32,42,0.36)] px-[12px] py-[12px] md:px-[20px]" onClick={onClose}>
+      <div
+        className={`w-full ${widthClass} max-h-[calc(100dvh-24px)] overflow-y-auto rounded-[24px] bg-white p-[18px] shadow-[0_32px_100px_rgba(24,32,42,0.2)] overscroll-contain md:rounded-[28px] md:p-[28px]`}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="mb-[20px] flex items-start justify-between gap-[16px]">
+          <div className="flex flex-col gap-[6px]">
+            <h3 className={`${FONT} text-[20px] font-bold text-[#18202a]`}>{title}</h3>
+            {description ? (
+              <p className={`${FONT} text-[13px] leading-[1.5] text-[#6c7b8e]`}>{description}</p>
+            ) : null}
+          </div>
+          <button onClick={onClose} className="rounded-full p-[6px] text-[#9aa5b4] transition-colors hover:bg-[#f4f6fa] hover:text-[#18202a]">
+            <X size={18} />
+          </button>
+        </div>
+        {children}
+      </div>
+    </div>
+  )
+}
+
+function CategoryColorSwatch({ color, selected, onClick }: { color: string; selected: boolean; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`h-[40px] w-[40px] rounded-full border transition-all ${selected ? 'scale-105 ring-2 ring-[#004ea7] ring-offset-2' : 'border-white/70 hover:scale-[1.03]'}`}
+      style={{ backgroundColor: color }}
+    />
+  )
+}
+
+function SubcategoryThumbnail({ category, subcategory, size = 'md' }: {
+  category?: Pick<Category, 'color'> | null
+  subcategory?: Pick<Subcategory, 'emoji'> | null
+  size?: 'sm' | 'md'
+}) {
+  const thumb = getSubcategoryThumbnail(category, subcategory)
+  const sizeClass = size === 'sm' ? 'h-[34px] w-[34px] text-[18px] rounded-[12px]' : 'h-[56px] w-[56px] text-[28px] rounded-[18px]'
+
+  return (
+    <div
+      className={`flex items-center justify-center border border-white/70 shadow-[inset_0_0_0_1px_rgba(255,255,255,0.45)] ${sizeClass}`}
+      style={{ backgroundColor: thumb.backgroundColor }}
+    >
+      <span>{thumb.emoji}</span>
     </div>
   )
 }
@@ -81,105 +147,450 @@ function InlineInput({ value, onSave, onCancel, placeholder = '이름 입력' }:
 // ════════════════════════════════════════════════════════════════
 interface CatWithSubs extends Category { subs: Subcategory[] }
 
-function CategoryCard({ cat, onRefresh }: { cat: CatWithSubs; onRefresh: () => void }) {
-  const [editCatId,  setEditCatId]  = useState<string | null>(null)
-  const [editSubId,  setEditSubId]  = useState<string | null>(null)
-  const [addingSub,  setAddingSub]  = useState(false)
+interface CategoryModalState {
+  mode: 'create' | 'edit'
+  type: 'expense' | 'income'
+  category?: Category
+}
 
-  const handleDeleteCat = async () => {
-    if (!confirm(`'${cat.name}' 대분류를 삭제하시겠습니까? 하위 소분류도 모두 삭제됩니다.`)) return
-    await deleteCategory(cat.id)
-    onRefresh()
-  }
+interface SubcategoryModalState {
+  mode: 'create' | 'edit'
+  category: Category
+  subcategory?: Subcategory
+}
 
-  const handleSaveCat = async (name: string) => {
-    if (name.trim()) await updateCategory(cat.id, name.trim())
-    setEditCatId(null)
-    onRefresh()
-  }
+function CategoryModal({ state, onClose, onSubmit }: {
+  state: CategoryModalState
+  onClose: () => void
+  onSubmit: (payload: { name: string; color: string }) => Promise<void>
+}) {
+  const [name, setName] = useState(state.category?.name ?? '')
+  const [color, setColor] = useState(state.category?.color ?? DEFAULT_CATEGORY_COLOR)
+  const title = state.mode === 'create' ? '대분류 추가' : '대분류 수정'
 
-  const handleAddSub = async (name: string) => {
-    if (name.trim()) await createSubcategory(cat.id, name.trim())
-    setAddingSub(false)
-    onRefresh()
-  }
-
-  const handleSaveSub = async (sub: Subcategory, name: string) => {
-    if (name.trim()) await updateSubcategory(sub.id, name.trim())
-    setEditSubId(null)
-    onRefresh()
-  }
-
-  const handleDeleteSub = async (sub: Subcategory) => {
-    await deleteSubcategory(sub.id)
-    onRefresh()
-  }
+  useEffect(() => {
+    setName(state.category?.name ?? '')
+    setColor(state.category?.color ?? DEFAULT_CATEGORY_COLOR)
+  }, [state])
 
   return (
-    <div className="bg-white rounded-[16px] border border-[rgba(226,232,240,0.8)] flex flex-col overflow-hidden">
-      {/* 카드 헤더 */}
-      <div className="flex items-center justify-between px-[14px] py-[11px] border-b border-[#f0f2f7] gap-[8px]">
-        {editCatId === cat.id ? (
-          <InlineInput value={cat.name} onSave={handleSaveCat} onCancel={() => setEditCatId(null)} />
-        ) : (
-          <>
-            <span className={`${FONT} font-bold text-[13px] text-[#18202a]`}>{cat.name}</span>
-            <div className="flex items-center gap-[6px]">
-              <button
-                onClick={() => setAddingSub(true)}
-                className="flex items-center gap-[4px] bg-[#f4f4f7] hover:bg-[#e6e8f1] rounded-[7px] px-[7px] py-[4px] transition-colors"
-              >
-                <Plus size={10} className="text-[#5898ff]" strokeWidth={2.5} />
-                <span className={`${FONT} text-[10px] font-semibold text-[#5898ff]`}>소분류</span>
-              </button>
-              <button onClick={() => setEditCatId(cat.id)} className="text-[#c0c8d4] hover:text-[#5898ff] transition-colors p-[2px]"><Pencil size={12} /></button>
-              <button onClick={handleDeleteCat} className="text-[#c0c8d4] hover:text-[#ff786b] transition-colors p-[2px]"><Trash2 size={12} /></button>
+    <ModalFrame
+      title={title}
+      description="대분류 이름과 파스텔 컬러를 정하면, 해당 색상이 소분류 썸네일의 컨테이너 베이스로 사용됩니다."
+      onClose={onClose}
+    >
+      <div className="grid gap-[20px] md:grid-cols-[1.1fr_0.9fr]">
+        <div className="flex flex-col gap-[12px]">
+          <label className={`${FONT} text-[12px] font-semibold uppercase tracking-[0.6px] text-[#6c7b8e]`}>대분류 이름</label>
+          <input
+            autoFocus
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="예: 식비, 업무, 정기수입"
+            className={`${INPUT_SM} h-[44px] rounded-[14px] px-[14px] text-[14px]`}
+          />
+          <div className="rounded-[18px] border border-[#edf1f6] bg-[#f8fafc] p-[18px]">
+            <p className={`${FONT} mb-[12px] text-[12px] font-semibold uppercase tracking-[0.6px] text-[#6c7b8e]`}>컬러 팔레트</p>
+            <div className="flex flex-wrap gap-[12px]">
+              {CATEGORY_PASTEL_COLORS.map((item) => (
+                <CategoryColorSwatch key={item} color={item} selected={color === item} onClick={() => setColor(item)} />
+              ))}
             </div>
-          </>
-        )}
+          </div>
+        </div>
+        <div className="rounded-[22px] border border-[#edf1f6] bg-[#fbfcfe] p-[20px]">
+          <p className={`${FONT} mb-[14px] text-[12px] font-semibold uppercase tracking-[0.6px] text-[#6c7b8e]`}>미리보기</p>
+          <div className="flex h-full min-h-[180px] flex-col items-center justify-center gap-[16px] rounded-[20px]" style={{ backgroundColor: color }}>
+            <div className="flex h-[64px] w-[64px] items-center justify-center rounded-[22px] border border-white/70 bg-white/30 text-[28px] shadow-[inset_0_0_0_1px_rgba(255,255,255,0.2)]">
+              {name.trim().slice(0, 1) || 'A'}
+            </div>
+            <div className="text-center">
+              <p className={`${FONT} text-[15px] font-semibold text-[#18202a]`}>{name.trim() || '새 대분류'}</p>
+              <p className={`${FONT} mt-[4px] text-[12px] text-[#33445a]`}>{state.type === 'expense' ? '소비 분류' : '수입 분류'}</p>
+            </div>
+          </div>
+        </div>
       </div>
 
-      {/* 소분류 리스트 */}
-      <div className="flex flex-col px-[14px] py-[8px]">
-        {cat.subs.map((sub) => (
-          <div key={sub.id} className="flex items-center justify-between py-[5px] group">
-            {editSubId === sub.id ? (
-              <InlineInput value={sub.name} onSave={(n) => handleSaveSub(sub, n)} onCancel={() => setEditSubId(null)} />
-            ) : (
-              <>
-                <div className="flex items-center gap-[8px]">
-                  <div className="w-[3px] h-[3px] rounded-full bg-[#d0d4db] flex-shrink-0" />
-                  <span className={`${FONT} text-[12px] text-[#18202a]`}>{sub.name}</span>
-                </div>
-                <div className="flex items-center gap-[6px] opacity-0 group-hover:opacity-100 transition-opacity">
-                  <button onClick={() => setEditSubId(sub.id)} className="text-[#c0c8d4] hover:text-[#5898ff] transition-colors"><Pencil size={11} /></button>
-                  <button onClick={() => handleDeleteSub(sub)} className="text-[#c0c8d4] hover:text-[#ff786b] transition-colors"><Trash2 size={11} /></button>
-                </div>
-              </>
-            )}
-          </div>
-        ))}
+      <div className="mt-[24px] flex justify-end gap-[10px]">
+        <button onClick={onClose} className={`${FONT} rounded-[12px] border border-[#d9e2ec] px-[18px] py-[10px] text-[13px] font-semibold text-[#6c7b8e] transition-colors hover:bg-[#f7f9fc]`}>
+          취소
+        </button>
+        <button
+          onClick={() => void onSubmit({ name: name.trim(), color })}
+          className={`${FONT} rounded-[12px] bg-[#004ea7] px-[18px] py-[10px] text-[13px] font-semibold text-white transition-colors hover:bg-[#003d86]`}
+        >
+          저장하기
+        </button>
+      </div>
+    </ModalFrame>
+  )
+}
 
-        {/* 소분류 추가 인라인 */}
-        {addingSub && (
-          <div className="pt-[5px]">
-            <InlineInput value="" onSave={handleAddSub} onCancel={() => setAddingSub(false)} placeholder="소분류 이름" />
-          </div>
-        )}
+function EmojiTabbedPicker({ value, onChange }: { value?: string | null; onChange: (emoji: string | null) => void }) {
+  const [activeTab, setActiveTab] = useState<string>(SUBCATEGORY_EMOJI_GROUPS[0]?.label ?? '')
+  const activeGroup = SUBCATEGORY_EMOJI_GROUPS.find((group) => group.label === activeTab) ?? SUBCATEGORY_EMOJI_GROUPS[0]
+
+  useEffect(() => {
+    if (!SUBCATEGORY_EMOJI_GROUPS.some((group) => group.label === activeTab)) {
+      setActiveTab(SUBCATEGORY_EMOJI_GROUPS[0]?.label ?? '')
+    }
+  }, [activeTab])
+
+  return (
+    <div className="rounded-[18px] border border-[#edf1f6] bg-[#fbfcfe] p-[16px]">
+      <div className="mb-[12px] flex items-center justify-between gap-[12px]">
+        <p className={`${FONT} text-[12px] font-semibold uppercase tracking-[0.6px] text-[#6c7b8e]`}>이모지 선택</p>
+        <button type="button" onClick={() => onChange(null)} className={`${FONT} text-[12px] font-semibold text-[#6c7b8e] transition-colors hover:text-[#18202a]`}>
+          이모지 없음
+        </button>
+      </div>
+      <div className="mb-[12px] flex flex-wrap gap-[8px]">
+        {SUBCATEGORY_EMOJI_GROUPS.map((group) => {
+          const active = group.label === activeGroup.label
+          return (
+            <button
+              key={group.label}
+              type="button"
+              onClick={() => setActiveTab(group.label)}
+              className={`${FONT} rounded-full px-[12px] py-[7px] text-[12px] font-semibold transition-colors ${
+                active ? 'bg-[#004ea7] text-white' : 'bg-white text-[#6c7b8e] hover:bg-[#eef4ff] hover:text-[#004ea7]'
+              }`}
+            >
+              {group.label}
+            </button>
+          )
+        })}
+      </div>
+      <div className="grid max-h-[280px] grid-cols-6 gap-[8px] overflow-y-auto pr-[2px]">
+        {activeGroup.emojis.map((emoji) => {
+          const active = value === emoji
+          return (
+            <button
+              key={emoji}
+              type="button"
+              onClick={() => onChange(emoji)}
+              className={`flex h-[48px] items-center justify-center rounded-[14px] border text-[24px] transition-colors ${
+                active ? 'border-[#004ea7] bg-[#eef4ff]' : 'border-[#e4e8f0] bg-white hover:border-[#5898ff] hover:bg-[#f7faff]'
+              }`}
+            >
+              {emoji}
+            </button>
+          )
+        })}
       </div>
     </div>
   )
 }
 
-function CategorySection({ title, cats, type, onRefresh }: {
-  title: string; cats: CatWithSubs[]; type: 'expense' | 'income'; onRefresh: () => void
+function SubcategoryModal({ state, onClose, onSubmit }: {
+  state: SubcategoryModalState
+  onClose: () => void
+  onSubmit: (payload: { name: string; emoji: string | null }) => Promise<void>
 }) {
-  const [adding, setAdding] = useState(false)
+  const [name, setName] = useState(state.subcategory?.name ?? '')
+  const [emoji, setEmoji] = useState<string | null>(state.subcategory?.emoji ?? null)
+  const [emojiTouched, setEmojiTouched] = useState(!!state.subcategory?.emoji)
+  const previewCategory = { color: getCategoryColor(state.category) }
 
-  const handleAdd = async (name: string) => {
-    if (name.trim()) await createCategory(name.trim(), type)
-    setAdding(false)
-    onRefresh()
+  useEffect(() => {
+    setName(state.subcategory?.name ?? '')
+    setEmoji(state.subcategory?.emoji ?? null)
+    setEmojiTouched(!!state.subcategory?.emoji)
+  }, [state])
+
+  useEffect(() => {
+    const trimmedName = name.trim()
+    if (!trimmedName || emojiTouched) return
+    setEmoji(recommendSubcategoryEmoji(trimmedName, state.category.name))
+  }, [name, state.category.name, emojiTouched])
+
+  return (
+    <ModalFrame
+      title={state.mode === 'create' ? '소분류 추가' : '소분류 수정'}
+      description="대분류의 파스텔 컬러 위에 소분류 이모지를 합쳐서 최종 썸네일을 만듭니다."
+      onClose={onClose}
+      widthClass="max-w-[840px]"
+    >
+      <div className="grid gap-[20px] lg:grid-cols-[0.9fr_1.1fr]">
+        <div className="flex flex-col gap-[16px]">
+          <div className="rounded-[22px] border border-[#edf1f6] bg-[#fbfcfe] p-[20px]">
+            <p className={`${FONT} mb-[12px] text-[12px] font-semibold uppercase tracking-[0.6px] text-[#6c7b8e]`}>대분류 베이스</p>
+            <div className="flex items-center gap-[14px] rounded-[18px] p-[16px]" style={{ backgroundColor: getCategoryColor(state.category) }}>
+              <SubcategoryThumbnail category={previewCategory} subcategory={{ emoji }} />
+              <div>
+                <p className={`${FONT} text-[14px] font-semibold text-[#18202a]`}>{state.category.name}</p>
+                <p className={`${FONT} mt-[4px] text-[12px] text-[#33445a]`}>컨테이너 컬러가 이 대분류 색상을 따라갑니다.</p>
+              </div>
+            </div>
+          </div>
+          <div className="flex flex-col gap-[8px]">
+            <label className={`${FONT} text-[12px] font-semibold uppercase tracking-[0.6px] text-[#6c7b8e]`}>소분류 이름</label>
+            <input
+              autoFocus
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="예: 커피, 지하철, 호텔"
+              className={`${INPUT_SM} h-[44px] rounded-[14px] px-[14px] text-[14px]`}
+            />
+            <p className={`${FONT} text-[12px] text-[#6c7b8e]`}>
+              이름 기준으로 이모지가 자동 추천되며, 필요하면 직접 변경할 수 있습니다.
+            </p>
+          </div>
+          <div className="rounded-[22px] border border-[#edf1f6] bg-[#f8fafc] p-[18px]">
+            <p className={`${FONT} mb-[12px] text-[12px] font-semibold uppercase tracking-[0.6px] text-[#6c7b8e]`}>완성 썸네일</p>
+            <div className="flex items-center gap-[14px]">
+              <SubcategoryThumbnail category={previewCategory} subcategory={{ emoji }} />
+              <div>
+                <p className={`${FONT} text-[14px] font-semibold text-[#18202a]`}>{name.trim() || '새 소분류'}</p>
+                <p className={`${FONT} mt-[4px] text-[12px] text-[#6c7b8e]`}>{emoji ? `${emoji} ${state.category.name}` : `${state.category.name} 기반 썸네일`}</p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <EmojiTabbedPicker
+          value={emoji}
+          onChange={(nextEmoji) => {
+            setEmoji(nextEmoji)
+            setEmojiTouched(true)
+          }}
+        />
+      </div>
+
+      <div className="mt-[24px] flex justify-end gap-[10px]">
+        <button onClick={onClose} className={`${FONT} rounded-[12px] border border-[#d9e2ec] px-[18px] py-[10px] text-[13px] font-semibold text-[#6c7b8e] transition-colors hover:bg-[#f7f9fc]`}>
+          취소
+        </button>
+        <button
+          onClick={() => void onSubmit({ name: name.trim(), emoji })}
+          className={`${FONT} rounded-[12px] bg-[#004ea7] px-[18px] py-[10px] text-[13px] font-semibold text-white transition-colors hover:bg-[#003d86]`}
+        >
+          저장하기
+        </button>
+      </div>
+    </ModalFrame>
+  )
+}
+
+function NoticeModal({ title, message, confirmLabel = '확인', onClose }: {
+  title: string
+  message: string
+  confirmLabel?: string
+  onClose: () => void
+}) {
+  return (
+    <ModalFrame title={title} description={message} onClose={onClose} widthClass="max-w-[520px]">
+      <div className="flex justify-end">
+        <button onClick={onClose} className={`${FONT} rounded-[12px] bg-[#004ea7] px-[18px] py-[10px] text-[13px] font-semibold text-white transition-colors hover:bg-[#003d86]`}>
+          {confirmLabel}
+        </button>
+      </div>
+    </ModalFrame>
+  )
+}
+
+function ConfirmDeleteModal({ title, description, onCancel, onConfirm }: {
+  title: string
+  description: string
+  onCancel: () => void
+  onConfirm: () => Promise<void>
+}) {
+  return (
+    <ModalFrame title={title} description={description} onClose={onCancel} widthClass="max-w-[520px]">
+      <div className="flex justify-end gap-[10px]">
+        <button onClick={onCancel} className={`${FONT} rounded-[12px] border border-[#d9e2ec] px-[18px] py-[10px] text-[13px] font-semibold text-[#6c7b8e] transition-colors hover:bg-[#f7f9fc]`}>
+          취소
+        </button>
+        <button onClick={() => void onConfirm()} className={`${FONT} rounded-[12px] bg-[#ff786b] px-[18px] py-[10px] text-[13px] font-semibold text-white transition-colors hover:bg-[#ef6759]`}>
+          삭제하기
+        </button>
+      </div>
+    </ModalFrame>
+  )
+}
+
+function ReplaceSubcategoryModal({ subcategory, categories, subcategories, onClose, onConfirm }: {
+  subcategory: Subcategory
+  categories: Category[]
+  subcategories: Subcategory[]
+  onClose: () => void
+  onConfirm: (replacement: { categoryId: string; subcategoryId: string }) => Promise<void>
+}) {
+  const currentCategoryId = categories.find((category) => category.id === subcategory.category_id)?.id ?? ''
+  const [targetCategoryId, setTargetCategoryId] = useState(currentCategoryId)
+  const [targetSubcategoryId, setTargetSubcategoryId] = useState('')
+  const availableCategories = categories
+  const filteredSubs = subcategories.filter((item) => item.category_id === targetCategoryId && item.id !== subcategory.id)
+
+  useEffect(() => {
+    setTargetCategoryId(currentCategoryId)
+    setTargetSubcategoryId('')
+  }, [currentCategoryId, subcategory.id])
+
+  return (
+    <ModalFrame
+      title="소분류 삭제 전에 대체 분류를 지정해주세요"
+      description="이미 적용된 내역이 있어 바로 삭제할 수 없습니다. 먼저 해당 내역들이 이동할 대분류와 소분류를 선택해주세요."
+      onClose={onClose}
+      widthClass="max-w-[620px]"
+    >
+      <div className="flex flex-col gap-[16px]">
+        <div className="rounded-[18px] border border-[#edf1f6] bg-[#fbfcfe] p-[16px]">
+          <div className="flex items-center gap-[12px]">
+            <SubcategoryThumbnail
+              category={categories.find((item) => item.id === subcategory.category_id)}
+              subcategory={subcategory}
+              size="sm"
+            />
+            <div>
+              <p className={`${FONT} text-[13px] font-semibold text-[#18202a]`}>삭제 대상</p>
+              <p className={`${FONT} mt-[4px] text-[13px] text-[#6c7b8e]`}>{formatSubcategoryLabel(subcategory)}</p>
+            </div>
+          </div>
+        </div>
+        <div className="grid gap-[14px] md:grid-cols-2">
+          <div className="flex flex-col gap-[8px]">
+            <label className={`${FONT} text-[12px] font-semibold uppercase tracking-[0.6px] text-[#6c7b8e]`}>대체 대분류</label>
+            <select value={targetCategoryId} onChange={(e) => { setTargetCategoryId(e.target.value); setTargetSubcategoryId('') }} className={`${INPUT_SM} h-[44px] rounded-[14px] px-[14px] text-[14px]`}>
+              <option value="">대분류 선택</option>
+              {availableCategories.map((category) => (
+                <option key={category.id} value={category.id}>{category.name}</option>
+              ))}
+            </select>
+          </div>
+          <div className="flex flex-col gap-[8px]">
+            <label className={`${FONT} text-[12px] font-semibold uppercase tracking-[0.6px] text-[#6c7b8e]`}>대체 소분류</label>
+            <select value={targetSubcategoryId} onChange={(e) => setTargetSubcategoryId(e.target.value)} className={`${INPUT_SM} h-[44px] rounded-[14px] px-[14px] text-[14px]`} disabled={!targetCategoryId}>
+              <option value="">소분류 선택</option>
+              {filteredSubs.map((item) => (
+                <option key={item.id} value={item.id}>{formatSubcategoryLabel(item)}</option>
+              ))}
+            </select>
+          </div>
+        </div>
+      </div>
+
+      <div className="mt-[24px] flex justify-end gap-[10px]">
+        <button onClick={onClose} className={`${FONT} rounded-[12px] border border-[#d9e2ec] px-[18px] py-[10px] text-[13px] font-semibold text-[#6c7b8e] transition-colors hover:bg-[#f7f9fc]`}>
+          취소
+        </button>
+        <button
+          onClick={() => {
+            if (!targetCategoryId || !targetSubcategoryId) return
+            void onConfirm({ categoryId: targetCategoryId, subcategoryId: targetSubcategoryId })
+          }}
+          className={`${FONT} rounded-[12px] bg-[#004ea7] px-[18px] py-[10px] text-[13px] font-semibold text-white transition-colors hover:bg-[#003d86]`}
+        >
+          대체 후 삭제
+        </button>
+      </div>
+    </ModalFrame>
+  )
+}
+
+function CategoryCard({
+  cat,
+  onCreateSub,
+  onEditCategory,
+  onEditSubcategory,
+  onDeleteCategory,
+  onDeleteSubcategory,
+}: {
+  cat: CatWithSubs
+  onCreateSub: (category: Category) => void
+  onEditCategory: (category: Category) => void
+  onEditSubcategory: (category: Category, subcategory: Subcategory) => void
+  onDeleteCategory: (category: Category) => void
+  onDeleteSubcategory: (category: Category, subcategory: Subcategory) => void
+}) {
+  return (
+    <div className="overflow-hidden rounded-[18px] border border-[rgba(226,232,240,0.9)] bg-white shadow-[0_8px_20px_rgba(24,32,42,0.04)]">
+      <div className="flex items-start justify-between gap-[8px] bg-[#f4f4f7] pl-[22px] pr-[12px] py-[12px]">
+        <div className="min-w-0 pt-[2px]">
+          <p className={`${FONT} truncate text-[16px] font-bold text-[#18202a]`}>{cat.name}</p>
+        </div>
+        <div className="flex items-center gap-[6px]">
+          <button onClick={() => onCreateSub(cat)} className="rounded-[8px] bg-white/70 px-[8px] py-[6px] text-[#004ea7] transition-colors hover:bg-white">
+            <Plus size={12} />
+          </button>
+          <button onClick={() => onEditCategory(cat)} className="rounded-[8px] bg-white/70 px-[8px] py-[6px] text-[#6c7b8e] transition-colors hover:bg-white hover:text-[#004ea7]">
+            <Pencil size={12} />
+          </button>
+          <button onClick={() => onDeleteCategory(cat)} className="rounded-[8px] bg-white/70 px-[8px] py-[6px] text-[#6c7b8e] transition-colors hover:bg-white hover:text-[#ff786b]">
+            <Trash2 size={12} />
+          </button>
+        </div>
+      </div>
+
+      <div className="flex flex-col gap-[6px] p-[10px]">
+        {cat.subs.length === 0 ? (
+          <div className="rounded-[12px] border border-dashed border-[#d8e0ea] bg-[#fbfcfe] px-[10px] py-[12px] text-center">
+            <p className={`${FONT} text-[11px] text-[#6c7b8e]`}>소분류 없음</p>
+          </div>
+        ) : (
+          cat.subs.map((sub) => (
+            <div key={sub.id} className="flex items-center justify-between gap-[8px] rounded-[12px] border border-[#eef2f6] bg-[#fbfcfe] px-[10px] py-[8px]">
+              <div className="flex min-w-0 items-center gap-[8px]">
+                <SubcategoryThumbnail category={cat} subcategory={sub} size="sm" />
+                <p className={`${FONT} truncate text-[12px] font-semibold text-[#18202a]`}>{sub.name}</p>
+              </div>
+              <div className="flex items-center gap-[2px]">
+                <button onClick={() => onEditSubcategory(cat, sub)} className="rounded-[8px] px-[6px] py-[5px] text-[#6c7b8e] transition-colors hover:bg-white hover:text-[#004ea7]">
+                  <Pencil size={11} />
+                </button>
+                <button onClick={() => onDeleteSubcategory(cat, sub)} className="rounded-[8px] px-[6px] py-[5px] text-[#6c7b8e] transition-colors hover:bg-white hover:text-[#ff786b]">
+                  <Trash2 size={11} />
+                </button>
+              </div>
+            </div>
+          ))
+        )}
+        <button
+          onClick={() => onCreateSub(cat)}
+          className={`${FONT} flex items-center justify-center gap-[5px] rounded-[12px] border border-dashed border-[#cfd8e3] px-[10px] py-[8px] text-[11px] font-semibold text-[#5898ff] transition-colors hover:border-[#5898ff] hover:bg-[#f7faff]`}
+        >
+          <Plus size={11} /> 소분류 추가
+        </button>
+      </div>
+    </div>
+  )
+}
+
+function CategorySection({ title, cats, type, allCategories, allSubcategories, onRefresh }: {
+  title: string
+  cats: CatWithSubs[]
+  type: 'expense' | 'income'
+  allCategories: Category[]
+  allSubcategories: Subcategory[]
+  onRefresh: () => void
+}) {
+  const [categoryModal, setCategoryModal] = useState<CategoryModalState | null>(null)
+  const [subcategoryModal, setSubcategoryModal] = useState<SubcategoryModalState | null>(null)
+  const [notice, setNotice] = useState<{ title: string; message: string } | null>(null)
+  const [deleteCategoryTarget, setDeleteCategoryTarget] = useState<Category | null>(null)
+  const [deleteSubcategoryTarget, setDeleteSubcategoryTarget] = useState<{ category: Category; subcategory: Subcategory } | null>(null)
+  const [replaceSubcategoryTarget, setReplaceSubcategoryTarget] = useState<{ category: Category; subcategory: Subcategory } | null>(null)
+
+  const handleDeleteCategory = async (category: Category) => {
+    const usage = await countCategoryUsages(category.id)
+    if (usage.total > 0) {
+      setNotice({
+        title: '대분류를 삭제할 수 없습니다',
+        message: '이미 적용된 분류가 있어 삭제할 수 없습니다. 먼저 해당 분류를 사용하는 거래, 고정항목, 예산 설정을 정리해주세요.',
+      })
+      return
+    }
+    setDeleteCategoryTarget(category)
+  }
+
+  const handleDeleteSubcategory = async (category: Category, subcategory: Subcategory) => {
+    const usage = await countSubcategoryUsages(subcategory.id)
+    if (usage.total > 0) {
+      setReplaceSubcategoryTarget({ category, subcategory })
+      return
+    }
+    setDeleteSubcategoryTarget({ category, subcategory })
   }
 
   return (
@@ -187,7 +598,7 @@ function CategorySection({ title, cats, type, onRefresh }: {
       <div className="flex items-center justify-between mb-[14px]">
         <h3 className={`${FONT} font-bold text-[15px] text-[#18202a]`}>{title}</h3>
         <button
-          onClick={() => setAdding(true)}
+          onClick={() => setCategoryModal({ mode: 'create', type })}
           className="flex items-center gap-[6px] bg-[#004ea7] hover:bg-[#003d86] rounded-[8px] px-[12px] py-[6px] transition-colors"
         >
           <Plus size={12} className="text-white" />
@@ -195,28 +606,158 @@ function CategorySection({ title, cats, type, onRefresh }: {
         </button>
       </div>
 
-      <div className="grid gap-[10px]" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))' }}>
-        {cats.map((cat) => <CategoryCard key={cat.id} cat={cat} onRefresh={onRefresh} />)}
-        {adding && (
-          <div className="bg-white rounded-[16px] border border-[#5898ff] flex items-center px-[14px] py-[11px]">
-            <InlineInput value="" onSave={handleAdd} onCancel={() => setAdding(false)} placeholder="대분류 이름" />
-          </div>
-        )}
+      <div className="grid grid-cols-2 gap-[10px] md:grid-cols-[repeat(auto-fill,minmax(210px,1fr))]">
+        {cats.map((cat) => (
+          <CategoryCard
+            key={cat.id}
+            cat={cat}
+            onCreateSub={(category) => setSubcategoryModal({ mode: 'create', category })}
+            onEditCategory={(category) => setCategoryModal({ mode: 'edit', type, category })}
+            onEditSubcategory={(category, subcategory) => setSubcategoryModal({ mode: 'edit', category, subcategory })}
+            onDeleteCategory={(category) => void handleDeleteCategory(category)}
+            onDeleteSubcategory={(category, subcategory) => void handleDeleteSubcategory(category, subcategory)}
+          />
+        ))}
       </div>
+
+      {categoryModal ? (
+        <CategoryModal
+          state={categoryModal}
+          onClose={() => setCategoryModal(null)}
+          onSubmit={async ({ name, color }) => {
+            try {
+              if (!name) {
+                setNotice({ title: '입력값을 확인해주세요', message: '대분류 이름을 입력한 뒤 저장해주세요.' })
+                return
+              }
+              if (categoryModal.mode === 'create') {
+                await createCategory({ name, type: categoryModal.type, color })
+              } else if (categoryModal.category) {
+                await updateCategory(categoryModal.category.id, { name, color })
+              }
+              setCategoryModal(null)
+              await onRefresh()
+            } catch (error) {
+              setNotice({
+                title: '대분류 저장에 실패했습니다',
+                message: error instanceof Error ? error.message : '잠시 후 다시 시도해주세요.',
+              })
+            }
+          }}
+        />
+      ) : null}
+
+      {subcategoryModal ? (
+        <SubcategoryModal
+          state={subcategoryModal}
+          onClose={() => setSubcategoryModal(null)}
+          onSubmit={async ({ name, emoji }) => {
+            try {
+              if (!name) {
+                setNotice({ title: '입력값을 확인해주세요', message: '소분류 이름을 입력한 뒤 저장해주세요.' })
+                return
+              }
+              if (subcategoryModal.mode === 'create') {
+                await createSubcategory(subcategoryModal.category.id, name, emoji)
+              } else if (subcategoryModal.subcategory) {
+                await updateSubcategory(subcategoryModal.subcategory.id, name, emoji)
+              }
+              setSubcategoryModal(null)
+              await onRefresh()
+            } catch (error) {
+              setNotice({
+                title: '소분류 저장에 실패했습니다',
+                message: error instanceof Error ? error.message : '잠시 후 다시 시도해주세요.',
+              })
+            }
+          }}
+        />
+      ) : null}
+
+      {notice ? <NoticeModal title={notice.title} message={notice.message} onClose={() => setNotice(null)} /> : null}
+
+      {deleteCategoryTarget ? (
+        <ConfirmDeleteModal
+          title="대분류를 삭제할까요?"
+          description={`'${deleteCategoryTarget.name}' 대분류와 연결된 미사용 소분류가 함께 삭제됩니다.`}
+          onCancel={() => setDeleteCategoryTarget(null)}
+          onConfirm={async () => {
+            await deleteCategory(deleteCategoryTarget.id)
+            setDeleteCategoryTarget(null)
+            await onRefresh()
+          }}
+        />
+      ) : null}
+
+      {deleteSubcategoryTarget ? (
+        <ConfirmDeleteModal
+          title="소분류를 삭제할까요?"
+          description={`'${deleteSubcategoryTarget.subcategory.name}' 소분류를 삭제합니다.`}
+          onCancel={() => setDeleteSubcategoryTarget(null)}
+          onConfirm={async () => {
+            await deleteSubcategory(deleteSubcategoryTarget.subcategory.id)
+            setDeleteSubcategoryTarget(null)
+            await onRefresh()
+          }}
+        />
+      ) : null}
+
+      {replaceSubcategoryTarget ? (
+        <ReplaceSubcategoryModal
+          subcategory={replaceSubcategoryTarget.subcategory}
+          categories={allCategories.filter((category) => category.type === type)}
+          subcategories={allSubcategories.filter((subcategory) => {
+            const category = allCategories.find((item) => item.id === subcategory.category_id)
+            return category?.type === type
+          })}
+          onClose={() => setReplaceSubcategoryTarget(null)}
+          onConfirm={async (replacement) => {
+            await replaceSubcategoryReferencesAndDelete(replaceSubcategoryTarget.subcategory.id, replacement)
+            setReplaceSubcategoryTarget(null)
+            await onRefresh()
+          }}
+        />
+      ) : null}
     </div>
   )
 }
 
 function CategoriesPanel() {
+  const [categories, setCategories] = useState<Category[]>([])
+  const [subcategories, setSubcategories] = useState<Subcategory[]>([])
   const [incomeCats,  setIncomeCats]  = useState<CatWithSubs[]>([])
   const [expenseCats, setExpenseCats] = useState<CatWithSubs[]>([])
   const [loading,     setLoading]     = useState(true)
+  const autoRecommendedRef = useRef(false)
 
   const load = useCallback(async () => {
     setLoading(true)
-    const [cats, subs] = await Promise.all([getCategories(), getSubcategories()])
+    let [cats, subs] = await Promise.all([getCategories(), getSubcategories()])
+
+    if (!autoRecommendedRef.current) {
+      const missingEmojiSubs = subs.filter((sub) => !sub.emoji)
+
+      if (missingEmojiSubs.length > 0) {
+        await Promise.all(
+          missingEmojiSubs.map((sub) => {
+            const parentCategory = cats.find((category) => category.id === sub.category_id)
+            return updateSubcategory(
+              sub.id,
+              sub.name,
+              recommendSubcategoryEmoji(sub.name, parentCategory?.name)
+            )
+          })
+        )
+        ;[cats, subs] = await Promise.all([getCategories(), getSubcategories()])
+      }
+
+      autoRecommendedRef.current = true
+    }
+
     const merge = (type: 'expense' | 'income'): CatWithSubs[] =>
       cats.filter((c) => c.type === type).map((c) => ({ ...c, subs: subs.filter((s) => s.category_id === c.id) }))
+    setCategories(cats)
+    setSubcategories(subs)
     setIncomeCats(merge('income'))
     setExpenseCats(merge('expense'))
     setLoading(false)
@@ -227,8 +768,8 @@ function CategoriesPanel() {
   if (loading) return <Spinner />
   return (
     <div>
-      <CategorySection title="수입 분류"  cats={incomeCats}  type="income"  onRefresh={load} />
-      <CategorySection title="소비 분류"  cats={expenseCats} type="expense" onRefresh={load} />
+      <CategorySection title="수입 분류" cats={incomeCats} type="income" allCategories={categories} allSubcategories={subcategories} onRefresh={load} />
+      <CategorySection title="소비 분류" cats={expenseCats} type="expense" allCategories={categories} allSubcategories={subcategories} onRefresh={load} />
     </div>
   )
 }
@@ -238,30 +779,35 @@ function CategoriesPanel() {
 // ════════════════════════════════════════════════════════════════
 const COLOR_PALETTE = ['#86AEED','#FFD979','#FF9F73','#99D276','#AEAFAF','#F9C6C6','#DFC3F7','#CADE9F']
 
-function PaymentEditForm({ fName, setFName, fInitial, setFInitial, fColor, setFColor, onSave, onCancel }: {
+function PaymentEditForm({ fName, setFName, fOwner, setFOwner, fInitial, setFInitial, fColor, setFColor, onSave, onCancel }: {
   fName: string; setFName: (v: string) => void
+  fOwner: string; setFOwner: (v: string) => void
   fInitial: string; setFInitial: (v: string) => void
   fColor: string; setFColor: (v: string) => void
   onSave: () => void; onCancel: () => void
 }) {
   return (
-    <div className="flex items-center gap-[12px]">
-      <div className="w-[48px] h-[30px] rounded-[4px] flex items-center justify-center font-bold text-[18px] text-white flex-shrink-0" style={{ backgroundColor: fColor }}>
+    <div className="grid grid-cols-2 gap-[10px] md:flex md:items-center md:gap-[12px]">
+      <div className="col-span-2 md:col-span-1 w-[48px] h-[30px] rounded-[4px] flex items-center justify-center font-bold text-[18px] text-white flex-shrink-0" style={{ backgroundColor: fColor }}>
         {fInitial || '?'}
       </div>
       <input value={fInitial} onChange={(e) => setFInitial(e.target.value.slice(0, 1).toUpperCase())}
-        placeholder="이니셜" maxLength={1} className={`w-[52px] text-center ${INPUT_SM}`} />
+        placeholder="이니셜" maxLength={1} className={`w-full md:w-[52px] text-center ${INPUT_SM}`} />
       <input value={fName} onChange={(e) => setFName(e.target.value)}
-        placeholder="지출방식명" className={`flex-1 ${INPUT_SM}`} autoFocus />
-      <div className="flex gap-[4px]">
+        placeholder="지출방식명" className={`col-span-2 md:col-span-1 flex-1 ${INPUT_SM}`} autoFocus />
+      <input value={fOwner} onChange={(e) => setFOwner(e.target.value)}
+        placeholder="소유주" className={`col-span-2 md:col-span-1 w-full md:w-[96px] ${INPUT_SM}`} />
+      <div className="col-span-2 flex flex-wrap gap-[6px]">
         {COLOR_PALETTE.map((c) => (
           <button key={c} onClick={() => setFColor(c)}
-            className={`w-[18px] h-[18px] rounded-full transition-all ${fColor === c ? 'ring-2 ring-offset-1 ring-[#004ea7]' : ''}`}
+            className={`h-[20px] w-[20px] rounded-full transition-all ${fColor === c ? 'ring-2 ring-offset-1 ring-[#004ea7]' : ''}`}
             style={{ backgroundColor: c }} />
         ))}
       </div>
-      <button onClick={onSave}   className="text-[#99D276] hover:opacity-70"><Check size={16} /></button>
-      <button onClick={onCancel} className="text-[#c0c8d4] hover:opacity-70"><X size={16} /></button>
+      <div className="col-span-2 flex items-center justify-end gap-[12px] md:col-span-1">
+        <button onClick={onSave}   className="text-[#99D276] hover:opacity-70"><Check size={16} /></button>
+        <button onClick={onCancel} className="text-[#c0c8d4] hover:opacity-70"><X size={16} /></button>
+      </div>
     </div>
   )
 }
@@ -271,9 +817,11 @@ function PaymentPanel() {
   const [loading,  setLoading]  = useState(true)
   const [editId,   setEditId]   = useState<string | null>(null)
   const [addMode,  setAddMode]  = useState(false)
+  const [error,    setError]    = useState('')
 
   // 편집 폼 상태
   const [fName,    setFName]    = useState('')
+  const [fOwner,   setFOwner]   = useState('')
   const [fInitial, setFInitial] = useState('')
   const [fColor,   setFColor]   = useState(COLOR_PALETTE[0])
 
@@ -286,28 +834,40 @@ function PaymentPanel() {
   useEffect(() => { load() }, [load])
 
   const startEdit = (p: PaymentMethod) => {
+    setError('')
     setAddMode(false)
-    setEditId(p.id); setFName(p.name); setFInitial(p.initial); setFColor(p.color)
+    setEditId(p.id); setFName(p.name); setFOwner(p.owner ?? ''); setFInitial(p.initial); setFColor(p.color)
   }
 
   const startAdd = () => {
+    setError('')
     setEditId(null)
-    setFName(''); setFInitial(''); setFColor(COLOR_PALETTE[0])
+    setFName(''); setFOwner(''); setFInitial(''); setFColor(COLOR_PALETTE[0])
     setAddMode(true)
   }
 
   const saveEdit = async () => {
     if (!fName.trim() || !fInitial.trim()) return
-    await updatePaymentMethod(editId!, { name: fName, initial: fInitial, color: fColor })
-    setEditId(null)
-    load()
+    try {
+      setError('')
+      await updatePaymentMethod(editId!, { name: fName, owner: fOwner, initial: fInitial, color: fColor })
+      setEditId(null)
+      load()
+    } catch (e) {
+      setError(e instanceof Error ? e.message : '지출방식 저장에 실패했습니다')
+    }
   }
 
   const saveAdd = async () => {
     if (!fName.trim() || !fInitial.trim()) return
-    await createPaymentMethod({ name: fName, initial: fInitial, color: fColor })
-    setAddMode(false)
-    load()
+    try {
+      setError('')
+      await createPaymentMethod({ name: fName, owner: fOwner, initial: fInitial, color: fColor })
+      setAddMode(false)
+      load()
+    } catch (e) {
+      setError(e instanceof Error ? e.message : '지출방식 저장에 실패했습니다')
+    }
   }
 
   const handleDelete = async (id: string) => {
@@ -320,18 +880,22 @@ function PaymentPanel() {
   return (
     <div>
       <SectionHeader title="지출방식" onAdd={startAdd} />
+      {error ? <p className={`${FONT} mb-[10px] text-[12px] text-[#ff786b]`}>{error}</p> : null}
       <div className="flex flex-col gap-[8px]">
         {payments.map((p) => (
           <div key={p.id} className="bg-white rounded-[16px] border border-[rgba(226,232,240,0.8)] px-[20px] py-[16px]">
             {editId === p.id ? (
-              <PaymentEditForm fName={fName} setFName={setFName} fInitial={fInitial} setFInitial={setFInitial} fColor={fColor} setFColor={setFColor} onSave={saveEdit} onCancel={() => setEditId(null)} />
+              <PaymentEditForm fName={fName} setFName={setFName} fOwner={fOwner} setFOwner={setFOwner} fInitial={fInitial} setFInitial={setFInitial} fColor={fColor} setFColor={setFColor} onSave={saveEdit} onCancel={() => setEditId(null)} />
             ) : (
               <div className="flex items-center gap-[14px]">
                 <div className="w-[48px] h-[30px] rounded-[4px] flex items-center justify-center font-bold text-[20px] text-white flex-shrink-0"
                   style={{ backgroundColor: p.color }}>
                   {p.initial}
                 </div>
-                <span className={`${FONT} font-semibold text-[14px] text-[#18202a] flex-1`}>{p.name}</span>
+                <div className="min-w-0 flex-1">
+                  <p className={`${FONT} truncate font-semibold text-[14px] text-[#18202a]`}>{p.name}</p>
+                  <p className={`${FONT} mt-[2px] truncate text-[11px] text-[#6c7b8e]`}>{p.owner || '소유주 미지정'}</p>
+                </div>
                 <div className="flex items-center gap-[10px]">
                   <button onClick={() => startEdit(p)} className="text-[#c0c8d4] hover:text-[#5898ff] transition-colors"><Pencil size={13} /></button>
                   <button onClick={() => handleDelete(p.id)} className="text-[#c0c8d4] hover:text-[#ff786b] transition-colors"><Trash2 size={13} /></button>
@@ -344,7 +908,7 @@ function PaymentPanel() {
         {/* 추가 폼 */}
         {addMode && (
           <div className="bg-white rounded-[16px] border border-[#5898ff] px-[20px] py-[16px]">
-            <PaymentEditForm fName={fName} setFName={setFName} fInitial={fInitial} setFInitial={setFInitial} fColor={fColor} setFColor={setFColor} onSave={saveAdd} onCancel={() => setAddMode(false)} />
+            <PaymentEditForm fName={fName} setFName={setFName} fOwner={fOwner} setFOwner={setFOwner} fInitial={fInitial} setFInitial={setFInitial} fColor={fColor} setFColor={setFColor} onSave={saveAdd} onCancel={() => setAddMode(false)} />
           </div>
         )}
       </div>
@@ -900,11 +1464,13 @@ function FixedItemsPanel({ type }: { type: 'expense' | 'income' }) {
   const title = type === 'expense' ? '고정지출' : '고정수입'
 
   const [items,      setItems]      = useState<FixedItemWithNames[]>([])
+  const [currentMonthActual, setCurrentMonthActual] = useState(0)
   const [categories, setCategories] = useState<Category[]>([])
   const [allSubs,    setAllSubs]    = useState<Subcategory[]>([])
   const [payments,   setPayments]   = useState<PaymentMethod[]>([])
   const [loading,    setLoading]    = useState(true)
   const [addMode,    setAddMode]    = useState(false)
+  const [editingItemId, setEditingItemId] = useState<string | null>(null)
 
   // 추가 폼 상태
   const [fCatId,     setFCatId]     = useState('')
@@ -918,18 +1484,29 @@ function FixedItemsPanel({ type }: { type: 'expense' | 'income' }) {
 
   const load = useCallback(async () => {
     setLoading(true)
+    const now = new Date()
+    const year = now.getFullYear()
+    const month = now.getMonth() + 1
+    const monthStart = `${year}-${String(month).padStart(2, '0')}-01`
+    const monthEnd = `${year}-${String(month).padStart(2, '0')}-${String(new Date(year, month, 0).getDate()).padStart(2, '0')}`
     const [rawItems, cats, subs, pm] = await Promise.all([
       getFixedItems(type),
       getCategories(type),
       getSubcategories(),
       type === 'expense' ? getPaymentMethods() : Promise.resolve([]),
     ])
+    const monthTxs = await getTransactions({
+      type,
+      dateFrom: monthStart,
+      dateTo: monthEnd,
+    })
     const named: FixedItemWithNames[] = rawItems.map((item) => ({
       ...item,
       categoryName:    cats.find((c) => c.id === item.category_id)?.name    ?? '-',
       subcategoryName: subs.find((s) => s.id === item.subcategory_id)?.name ?? '-',
     }))
     setItems(named)
+    setCurrentMonthActual(monthTxs.filter((tx) => tx.is_fixed).reduce((sum, tx) => sum + tx.amount, 0))
     setCategories(cats)
     setAllSubs(subs)
     setPayments(pm as PaymentMethod[])
@@ -942,22 +1519,45 @@ function FixedItemsPanel({ type }: { type: 'expense' | 'income' }) {
     setFCatId(''); setFSubId(''); setFDesc(''); setFAmount(''); setFDay(''); setFPaymentId('')
   }
 
-  const handleAdd = async () => {
+  const closeForm = () => {
+    resetForm()
+    setAddMode(false)
+    setEditingItemId(null)
+  }
+
+  const handleEditStart = (item: FixedItemWithNames) => {
+    setFCatId(item.category_id)
+    setFSubId(item.subcategory_id)
+    setFDesc(item.description)
+    setFAmount(String(item.amount))
+    setFDay(item.day_of_month ? String(item.day_of_month) : '')
+    setFPaymentId(item.payment_method_id ?? '')
+    setAddMode(false)
+    setEditingItemId(item.id)
+  }
+
+  const handleSave = async () => {
     if (!fCatId || !fSubId || !fDesc || !fAmount) return
-    await createFixedItem({
+    const payload = {
       type,
       category_id:       fCatId,
       subcategory_id:    fSubId,
       description:       fDesc,
       amount:            Number(fAmount.replace(/,/g, '')),
       currency:          'KRW',
-      payment_method_id: fPaymentId || null,
+      payment_method_id: type === 'expense' ? fPaymentId || null : null,
       day_of_month:      fDay ? Number(fDay) : null,
       is_active:         true,
-    })
-    resetForm()
-    setAddMode(false)
-    load()
+    }
+
+    if (editingItemId) {
+      await updateFixedItem(editingItemId, payload)
+    } else {
+      await createFixedItem(payload)
+    }
+
+    closeForm()
+    await load()
   }
 
   const handleDelete = async (id: string) => {
@@ -968,18 +1568,16 @@ function FixedItemsPanel({ type }: { type: 'expense' | 'income' }) {
 
   if (loading) return <Spinner />
 
-  const totalAmount = items.reduce((s, i) => s + i.amount, 0)
-
   return (
     <div>
-      <SectionHeader title={title} onAdd={() => { resetForm(); setAddMode(true) }} />
+      <SectionHeader title={title} onAdd={() => { resetForm(); setEditingItemId(null); setAddMode(true) }} />
 
       {/* 이번 달 합계 */}
       {items.length > 0 && (
         <div className="flex items-center gap-[16px] mb-[16px] bg-white rounded-[16px] border border-[rgba(226,232,240,0.8)] px-[20px] py-[14px]">
           <div>
-            <p className={`${FONT} text-[10px] font-semibold text-[#6c7b8e] uppercase tracking-[0.8px]`}>이번 달 예정 합계</p>
-            <p className={`${FONT} font-bold text-[22px] text-[#18202a] mt-[2px]`}>{fmt(totalAmount)}</p>
+            <p className={`${FONT} text-[10px] font-semibold text-[#6c7b8e] uppercase tracking-[0.8px]`}>이번 달 실행 합계</p>
+            <p className={`${FONT} font-bold text-[22px] text-[#18202a] mt-[2px]`}>{fmt(currentMonthActual)}</p>
           </div>
           <div className="h-[40px] w-[1px] bg-[#e4e5e9] mx-[8px]" />
           <div>
@@ -994,14 +1592,15 @@ function FixedItemsPanel({ type }: { type: 'expense' | 'income' }) {
 
       {/* 목록 테이블 */}
       <div className="bg-white rounded-[16px] border border-[rgba(226,232,240,0.8)] overflow-hidden mb-[16px]">
-        <div className="bg-[#18202a] flex items-center h-[40px] gap-[12px] px-[20px]">
-          {['일자','대분류','소분류','내역','금액',''].map((h, i) => (
+        <div className="bg-[#18202a] flex items-center h-[40px] gap-[8px] px-[12px] md:gap-[12px] md:px-[20px]">
+          {['예정일','등록일','대분류','소분류','내역','금액',''].map((h, i) => (
             <div key={i} className={`${FONT} font-bold text-[10px] text-[#e6e8f1] tracking-[0.9px] uppercase ${
-              h === ''        ? 'w-[56px] flex-shrink-0' :
-              h === '일자'   ? 'w-[32px] flex-shrink-0 text-center' :
-              h === '대분류' ? 'w-[64px] flex-shrink-0' :
-              h === '소분류' ? 'w-[80px] flex-shrink-0' :
-              h === '금액'   ? 'w-[100px] flex-shrink-0 text-right' :
+              h === ''        ? 'w-[52px] md:w-[64px] flex-shrink-0' :
+              h === '예정일' ? 'w-[40px] flex-shrink-0 text-center' :
+              h === '등록일' ? 'w-[62px] md:w-[72px] flex-shrink-0 text-center' :
+              h === '대분류' ? 'w-[52px] md:w-[64px] flex-shrink-0' :
+              h === '소분류' ? 'w-[60px] md:w-[80px] flex-shrink-0' :
+              h === '금액'   ? 'w-[74px] md:w-[100px] flex-shrink-0 text-right' :
               'flex-1 min-w-0'
             }`}>{h}</div>
           ))}
@@ -1013,15 +1612,21 @@ function FixedItemsPanel({ type }: { type: 'expense' | 'income' }) {
           </div>
         ) : items.map((item, i) => (
           <div key={item.id}
-            className={`flex items-center h-[48px] gap-[12px] px-[20px] ${i < items.length - 1 ? 'border-b border-[#f0f2f7]' : ''}`}>
-            <div className={`w-[32px] flex-shrink-0 text-center ${FONT} text-[13px] text-[#FF786B] font-semibold`}>
+            className={`flex items-center h-[48px] gap-[8px] px-[12px] md:gap-[12px] md:px-[20px] ${i < items.length - 1 ? 'border-b border-[#f0f2f7]' : ''}`}>
+            <div className={`w-[40px] flex-shrink-0 text-center ${FONT} text-[13px] text-[#FF786B] font-semibold`}>
               {item.day_of_month ?? '-'}
             </div>
-            <div className={`w-[64px] flex-shrink-0 ${FONT} text-[12px] text-[#18202a]`}>{item.categoryName}</div>
-            <div className={`w-[80px] flex-shrink-0 ${FONT} text-[12px] text-[#18202a]`}>{item.subcategoryName}</div>
+            <div className={`w-[62px] md:w-[72px] flex-shrink-0 text-center ${FONT} text-[10px] md:text-[11px] text-[#6c7b8e]`}>
+              {fmtShortDate(item.created_at)}
+            </div>
+            <div className={`w-[52px] md:w-[64px] flex-shrink-0 ${FONT} text-[11px] md:text-[12px] text-[#18202a] truncate`}>{item.categoryName}</div>
+            <div className={`w-[60px] md:w-[80px] flex-shrink-0 ${FONT} text-[11px] md:text-[12px] text-[#18202a] truncate`}>{item.subcategoryName}</div>
             <div className={`flex-1 min-w-0 ${FONT} text-[12px] text-[#18202a] truncate`}>{item.description}</div>
-            <div className={`w-[100px] flex-shrink-0 text-right ${FONT} font-bold text-[12px] text-[#18202a]`}>{fmt(item.amount)}</div>
-            <div className="w-[56px] flex-shrink-0 flex items-center justify-end gap-[10px]">
+            <div className={`w-[74px] md:w-[100px] flex-shrink-0 text-right ${FONT} font-bold text-[11px] md:text-[12px] text-[#18202a]`}>{fmt(item.amount)}</div>
+            <div className="w-[52px] md:w-[64px] flex-shrink-0 flex items-center justify-end gap-[10px] overflow-visible">
+              <button onClick={() => handleEditStart(item)} className="text-[#c0c8d4] hover:text-[#004ea7] transition-colors" title="수정">
+                <Pencil size={12} />
+              </button>
               <button onClick={() => handleDelete(item.id)} className="text-[#c0c8d4] hover:text-[#ff786b] transition-colors" title="해제">
                 <Trash2 size={12} />
               </button>
@@ -1031,9 +1636,9 @@ function FixedItemsPanel({ type }: { type: 'expense' | 'income' }) {
       </div>
 
       {/* 추가 폼 */}
-      {addMode && (
+      {(addMode || editingItemId) && (
         <div className="bg-white rounded-[16px] border border-[#5898ff] px-[20px] py-[16px]">
-          <p className={`${FONT} font-bold text-[13px] text-[#18202a] mb-[14px]`}>{title} 추가</p>
+          <p className={`${FONT} font-bold text-[13px] text-[#18202a] mb-[14px]`}>{title} {editingItemId ? '수정' : '추가'}</p>
           <div className="flex flex-wrap gap-[10px] items-end">
 
             {/* 대분류 */}
@@ -1081,18 +1686,18 @@ function FixedItemsPanel({ type }: { type: 'expense' | 'income' }) {
                 <label className={`${FONT} text-[10px] font-semibold text-[#6c7b8e] uppercase tracking-[0.6px]`}>지출방식</label>
                 <select value={fPaymentId} onChange={(e) => setFPaymentId(e.target.value)} className={`${INPUT_SM} w-[120px]`}>
                   <option value="">없음</option>
-                  {payments.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+                  {payments.map((p) => <option key={p.id} value={p.id}>{formatPaymentMethodLabel(p)}</option>)}
                 </select>
               </div>
             )}
 
             {/* 저장/취소 */}
             <div className="flex gap-[8px]">
-              <button onClick={handleAdd}
+              <button onClick={handleSave}
                 className={`${FONT} text-[12px] font-semibold text-white bg-[#004ea7] rounded-[8px] px-[16px] h-[34px] hover:bg-[#003d86] transition-colors`}>
                 저장
               </button>
-              <button onClick={() => { resetForm(); setAddMode(false) }}
+              <button onClick={closeForm}
                 className={`${FONT} text-[12px] font-semibold text-[#6c7b8e] bg-[#f4f4f7] rounded-[8px] px-[16px] h-[34px] hover:bg-[#e6e8f1] transition-colors`}>
                 취소
               </button>
@@ -1121,13 +1726,15 @@ function ContentPanel({ menuKey }: { menuKey: MenuKey }) {
 
 export default function ManagePage() {
   const [active, setActive] = useState<MenuKey>('categories')
+  const [mobileActive, setMobileActive] = useState<MobileManageKey>('taxonomy')
+  const [contentScrolled, setContentScrolled] = useState(false)
 
   return (
     <div className="h-full flex flex-col overflow-hidden">
 
       {/* 상단 탭 바 */}
-      <div className="flex-shrink-0 bg-[#f4f4f7] px-[32px] pt-[16px] pb-[0]">
-        <div className="relative flex items-center p-[4px] rounded-[9999px] w-full">
+      <div className={`relative z-10 flex-shrink-0 bg-[#f4f4f7] px-[16px] pt-[12px] pb-[8px] md:px-[32px] md:pt-[16px] transition-shadow ${contentScrolled ? 'shadow-[0_8px_18px_rgba(24,32,42,0.08)]' : ''}`}>
+        <div className="relative hidden md:flex items-center p-[4px] rounded-[9999px] w-full">
           <div aria-hidden className="absolute bg-[#e6e8f1] inset-0 pointer-events-none rounded-[9999px] shadow-[inset_0px_2px_4px_0px_rgba(0,0,0,0.05)]" />
           {MENU_ITEMS.map(({ key, label }) => (
             <button
@@ -1135,8 +1742,26 @@ export default function ManagePage() {
               onClick={() => setActive(key)}
               className={`relative flex-1 py-[8px] rounded-[9999px] transition-all ${active === key ? 'bg-white shadow-[0px_1px_2px_0px_rgba(0,0,0,0.05)]' : ''}`}
             >
-              <span className={`${FONT} text-[12px] whitespace-nowrap`}
+              <span className={`${FONT} text-[14px] whitespace-nowrap`}
                 style={{ fontWeight: active === key ? 700 : 500, color: active === key ? '#004EA7' : '#6C7B8E' }}>
+                {label}
+              </span>
+            </button>
+          ))}
+        </div>
+
+        <div className="relative flex md:hidden items-center p-[4px] rounded-[9999px] w-full">
+          <div aria-hidden className="absolute bg-[#e6e8f1] inset-0 pointer-events-none rounded-[9999px] shadow-[inset_0px_2px_4px_0px_rgba(0,0,0,0.05)]" />
+          {MOBILE_MENU_ITEMS.map(({ key, label }) => (
+            <button
+              key={key}
+              onClick={() => setMobileActive(key)}
+              className={`relative flex-1 py-[8px] rounded-[9999px] transition-all ${mobileActive === key ? 'bg-white shadow-[0px_1px_2px_0px_rgba(0,0,0,0.05)]' : ''}`}
+            >
+              <span
+                className={`${FONT} text-[12px] whitespace-nowrap`}
+                style={{ fontWeight: mobileActive === key ? 700 : 500, color: mobileActive === key ? '#004EA7' : '#6C7B8E' }}
+              >
                 {label}
               </span>
             </button>
@@ -1145,9 +1770,41 @@ export default function ManagePage() {
       </div>
 
       {/* 컨텐츠 */}
-      <div className="flex-1 overflow-y-auto px-[36px] py-[24px]">
-        <ContentPanel menuKey={active} />
+      <div
+        className="flex-1 overflow-y-auto px-[16px] py-[16px] md:px-[36px] md:py-[24px]"
+        onScroll={(e) => setContentScrolled(e.currentTarget.scrollTop > 0)}
+      >
+        <div className="hidden md:block">
+          <ContentPanel menuKey={active} />
+        </div>
+
+        <div className="flex flex-col gap-[20px] md:hidden">
+          {mobileActive === 'taxonomy' ? (
+            <CategoriesPanel />
+          ) : null}
+
+          {mobileActive === 'settings' ? (
+            <>
+              <PaymentPanel />
+              <MobileGroupDivider title="세부 설정" />
+              <CurrencyPanel />
+              <MobileGroupDivider title="지역 / 태그" />
+              <RegionPanel />
+              <TagsPanel />
+            </>
+          ) : null}
+
+          {mobileActive === 'fixed' ? (
+            <>
+              <FixedItemsPanel type="expense" />
+              <MobileGroupDivider title="고정 수입" />
+              <FixedItemsPanel type="income" />
+            </>
+          ) : null}
+        </div>
       </div>
+
+      <GlobalTransactionFab />
     </div>
   )
 }

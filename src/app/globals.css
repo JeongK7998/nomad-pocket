@@ -215,3 +215,57 @@
     font-family: 'Pretendard Variable', Pretendard, -apple-system, BlinkMacSystemFont, 'Apple SD Gothic Neo', sans-serif;
   }
 }
+
+@media (max-width: 639px) {
+  input,
+  textarea,
+  select {
+    font-size: 16px !important;
+  }
+
+  .mobile-landscape-guard {
+    display: flex;
+  }
+
+  .mobile-landscape-blocked {
+    display: none;
+  }
+
+  .tablet-portrait-guard {
+    display: none;
+  }
+
+  .tablet-portrait-blocked {
+    display: block;
+  }
+}
+
+@media (max-width: 639px) and (orientation: portrait) {
+  .mobile-landscape-guard {
+    display: none;
+  }
+
+  .mobile-landscape-blocked {
+    display: block;
+  }
+}
+
+@media (min-width: 640px) and (max-width: 1023px) {
+  .tablet-portrait-guard {
+    display: flex;
+  }
+
+  .tablet-portrait-blocked {
+    display: none;
+  }
+}
+
+@media (min-width: 640px) and (max-width: 1023px) and (orientation: landscape) {
+  .tablet-portrait-guard {
+    display: none;
+  }
+
+  .tablet-portrait-blocked {
+    display: block;
+  }
+}

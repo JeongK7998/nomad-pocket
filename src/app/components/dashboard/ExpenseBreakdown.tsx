@@ -1,63 +1,114 @@
 'use client'
 
-import { PieChart, Pie, Cell, ResponsiveContainer } from 'recharts'
-
 export interface BreakdownItem { name: string; value: number; color: string }
 
 interface Props { data: BreakdownItem[] }
 
-export default function ExpenseBreakdown({ data }: Props) {
-  const col1 = data.slice(0, Math.ceil(data.length / 2))
-  const col2 = data.slice(Math.ceil(data.length / 2))
+const FONT = "font-['Pretendard_Variable',sans-serif]"
+
+function polarToCartesian(cx: number, cy: number, radius: number, angleDeg: number) {
+  const angleRad = (angleDeg * Math.PI) / 180
+  return {
+    x: cx + radius * Math.cos(angleRad),
+    y: cy - radius * Math.sin(angleRad),
+  }
+}
+
+function describeTopSemiArcPath(cx: number, cy: number, radius: number) {
+  const left = polarToCartesian(cx, cy, radius, 180)
+  const right = polarToCartesian(cx, cy, radius, 0)
+
+  return `M ${left.x} ${left.y} A ${radius} ${radius} 0 0 1 ${right.x} ${right.y}`
+}
+
+function SemiDonut({ data }: { data: BreakdownItem[] }) {
+  const safeData = data.filter((item) => item.value > 0)
+  const total = safeData.reduce((sum, item) => sum + item.value, 0)
+  const cx = 88
+  const cy = 88
+  const radius = 64
+  const strokeWidth = 28
+  const pathD = describeTopSemiArcPath(cx, cy, radius)
+  let offset = 0
 
   return (
-    <div className="flex flex-col h-full min-h-0">
-      <p className="font-['Pretendard_Variable',sans-serif] font-bold text-[20px] leading-[1em] text-[#18202a] uppercase flex-shrink-0 mb-[18px]">
+    <svg width="176" height="92" viewBox="0 0 176 92" aria-hidden="true">
+      {total <= 0 ? (
+        <path
+          d={pathD}
+          fill="none"
+          stroke="#e9eef6"
+          strokeWidth={strokeWidth}
+          strokeLinecap="butt"
+          pathLength={100}
+        />
+      ) : (
+        safeData.map((item, index) => {
+          const segmentLength = (item.value / total) * 100
+          const path = (
+            <path
+              key={`${item.name}-${index}`}
+              d={pathD}
+              fill="none"
+              stroke={item.color}
+              strokeWidth={strokeWidth}
+              strokeLinecap="butt"
+              pathLength={100}
+              strokeDasharray={`${segmentLength} ${100 - segmentLength}`}
+              strokeDashoffset={-offset}
+            />
+          )
+          offset += segmentLength
+
+          return path
+        })
+      )}
+    </svg>
+  )
+}
+
+function LegendColumn({ items }: { items: BreakdownItem[] }) {
+  return (
+    <div className="flex flex-col items-start">
+      {items.map((item) => (
+        <div key={item.name} className="flex w-[110px] items-center justify-center">
+          <div className="flex h-[14px] min-w-0 flex-1 items-center justify-center gap-[10px]">
+            <span
+              className="h-[10px] w-[10px] flex-shrink-0 rounded-[4px]"
+              style={{ backgroundColor: item.color }}
+            />
+            <span className={`${FONT} w-[48px] text-[10px] font-medium leading-[14px] text-[#18202a]`}>
+              {item.name}
+            </span>
+          </div>
+          <span className={`${FONT} flex-shrink-0 whitespace-nowrap text-[10px] font-medium leading-[14px] text-[#18202a]`}>
+            {item.value.toFixed(1)}%
+          </span>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+export default function ExpenseBreakdown({ data }: Props) {
+  const midpoint = Math.ceil(data.length / 2)
+  const col1 = data.slice(0, midpoint)
+  const col2 = data.slice(midpoint)
+
+  return (
+    <div className="flex h-full min-h-0 flex-col">
+      <p className={`${FONT} flex-shrink-0 text-[12px] font-bold uppercase leading-[normal] text-[#18202a]`}>
         Expense Breakdown
       </p>
 
-      <div className="flex flex-col items-center gap-[12px]">
-        {/* Legend: 2 cols */}
-        <div className="flex gap-[36px]">
-          {[col1, col2].map((col, ci) => (
-            <div key={ci} style={{ width: 110 }}>
-              {col.map((d) => (
-                <div key={d.name} className="flex items-center" style={{ height: 14 }}>
-                  <div className="flex items-center gap-[10px] flex-1 min-w-0">
-                    <span className="flex-shrink-0" style={{ width: 10, height: 10, backgroundColor: d.color, borderRadius: 4 }} />
-                    <span className="font-['Pretendard_Variable',sans-serif] font-medium text-[10px] text-[#18202a] truncate leading-none">
-                      {d.name}
-                    </span>
-                  </div>
-                  <span className="font-['Pretendard_Variable',sans-serif] font-medium text-[10px] text-[#18202a] leading-none flex-shrink-0 text-right" style={{ width: 28 }}>
-                    {d.value}%
-                  </span>
-                </div>
-              ))}
-            </div>
-          ))}
+      <div className="flex min-h-0 flex-1 flex-col items-center justify-between pt-[12px]">
+        <div className="flex flex-shrink-0 items-start gap-[48px]">
+          <LegendColumn items={col1} />
+          <LegendColumn items={col2} />
         </div>
 
-        {/* Semi-circle donut */}
-        <div style={{ width: 170, height: 88, marginTop: 8 }} className="flex-shrink-0">
-          <ResponsiveContainer width="100%" height="100%">
-            <PieChart margin={{ top: 3, right: 0, bottom: 0, left: 0 }}>
-              <Pie
-                data={data}
-                cx="50%"
-                cy="100%"
-                startAngle={180}
-                endAngle={0}
-                innerRadius={55}
-                outerRadius={85}
-                dataKey="value"
-                stroke="none"
-                paddingAngle={0}
-              >
-                {data.map((entry, i) => <Cell key={i} fill={entry.color} />)}
-              </Pie>
-            </PieChart>
-          </ResponsiveContainer>
+        <div className="flex h-[92px] w-[176px] flex-shrink-0 items-start justify-center overflow-hidden">
+          <SemiDonut data={data} />
         </div>
       </div>
     </div>

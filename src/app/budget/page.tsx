@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from 'react'
 import dynamic from 'next/dynamic'
 import GoalCard from '@/app/components/budget/GoalCard'
 import BudgetPopup from '@/app/components/budget/BudgetPopup'
+import { GlobalTransactionFab } from '@/app/components/layout/GlobalTransactionFab'
 import {
   ensureSystemMonthlyBudget, ensureSystemYearlyBudget,
   getSystemMonthlyBudgets, getCustomGoals,
@@ -38,8 +39,6 @@ const EMPTY_MASTER: MasterData = {
   regions: [],
   tags: [],
 }
-
-function fmt(n: number) { return '₩' + n.toLocaleString('ko-KR') }
 
 // ── 기간 종료 여부 판단 ──────────────────────────────────────────
 // 달성 기준: 기간이 완전히 끝났고 + 목표 금액을 넘지 않은 경우
@@ -309,11 +308,11 @@ export default function BudgetPage() {
 
   return (
     <div className="h-full overflow-y-auto">
-      <div className="px-[32px] py-[24px] flex flex-col gap-[28px]">
+      <div className="px-[16px] py-[20px] md:px-[32px] md:py-[24px] flex flex-col gap-[20px] md:gap-[28px]">
 
         {/* ── 페이지 타이틀 ── */}
         <div>
-          <h1 className={`${FONT} font-bold text-[24px] text-[#18202a] uppercase tracking-[-0.5px]`}>
+          <h1 className={`${FONT} font-bold text-[22px] md:text-[24px] text-[#18202a] uppercase tracking-[-0.5px]`}>
             Budget
           </h1>
           <p className={`${FONT} text-[13px] text-[#6c7b8e] mt-[2px]`}>
@@ -322,15 +321,15 @@ export default function BudgetPage() {
         </div>
 
         {/* ── Section 1: 라인 차트 + 요약 카드 (3:1) ── */}
-        <div className="flex gap-[24px] items-stretch">
+        <div className="flex flex-col gap-[16px] md:flex-row md:gap-[24px] md:items-stretch">
 
           {/* 차트 (75%) */}
-          <Card className="flex-[3] p-[24px] flex flex-col gap-[16px] min-w-0">
+          <Card className="flex-[3] min-w-0 p-[8px] flex flex-col gap-[6px] md:p-[24px] md:gap-[16px]">
             <div className="flex items-center justify-between">
-              <p className={`${FONT} font-bold text-[12px] text-[#18202a] uppercase`}>
+              <p className={`${FONT} font-bold text-[13px] text-[#18202a] uppercase md:text-[12px]`}>
                 월간 지출 목표 달성 현황 — {CY}년
               </p>
-              <p className={`${FONT} text-[11px] text-[#6c7b8e]`}>
+              <p className={`${FONT} hidden md:block text-[11px] text-[#6c7b8e]`}>
                 실선: 실제 지출 / 점선: 목표 라인
               </p>
             </div>
@@ -338,15 +337,15 @@ export default function BudgetPage() {
           </Card>
 
           {/* 요약 카드 (25%) */}
-          <div className="flex-1 min-w-[200px] max-w-[280px]">
+          <div className="w-full md:flex-1 md:min-w-[200px] md:max-w-[280px]">
             <SummaryCard goals={allGoals} actuals={actuals} />
           </div>
 
         </div>
 
         {/* ── Section 2: 진행중인 목표 ── */}
-        <div>
-          <div className="flex items-center justify-between mb-[16px]">
+        <div className="mt-[12px] md:mt-0">
+          <div className="flex items-center justify-between gap-[12px] mb-[20px] md:mb-[16px]">
             <p className={`${FONT} font-bold text-[14px] text-[#18202a]`}>
               진행중인 목표
               <span className={`${FONT} font-normal text-[12px] text-[#6c7b8e] ml-[8px]`}>
@@ -355,7 +354,7 @@ export default function BudgetPage() {
             </p>
             <button
               onClick={openAdd}
-              className={`${FONT} flex items-center gap-[8px] px-[16px] py-[8px] rounded-[9999px] bg-[#004ea7] text-white text-[12px] font-semibold hover:bg-[#0053b1] transition-colors`}
+              className={`${FONT} ml-auto flex shrink-0 items-center justify-center gap-[8px] rounded-[10px] bg-[#004ea7] px-[12px] py-[8px] text-[12px] font-semibold text-white transition-colors hover:bg-[#0053b1] md:rounded-[9999px] md:px-[16px] md:justify-start`}
             >
               <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
                 <path d="M6 1V11M1 6H11" stroke="white" strokeWidth="1.5" strokeLinecap="round"/>
@@ -369,7 +368,7 @@ export default function BudgetPage() {
               목표가 없습니다. 새 목표를 추가하거나 Supabase migration을 실행해주세요.
             </div>
           ) : (
-            <div className="grid grid-cols-2 gap-[16px]">
+            <div className="grid grid-cols-1 gap-[16px] md:grid-cols-2">
               {allGoals.map((goal) => (
                 <GoalCard
                   key={goal.id}
@@ -395,6 +394,7 @@ export default function BudgetPage() {
         currentYear={CY}
         currentMonth={CM}
       />
+      <GlobalTransactionFab onSaved={load} />
     </div>
   )
 }

@@ -1,4 +1,5 @@
 import type { MetadataRoute } from 'next'
+import { APP_ICON_VERSION } from '@/app/iconVersion'
 
 export default function manifest(): MetadataRoute.Manifest {
   return {
@@ -9,21 +10,21 @@ export default function manifest(): MetadataRoute.Manifest {
     display: 'standalone',
     background_color: '#f4f4f7',
     theme_color: '#004ea7',
-    orientation: 'landscape',
+    orientation: 'any',
     lang: 'ko',
     icons: [
       {
-        src: '/icon?size=192',
+        src: `/icon?v=${APP_ICON_VERSION}`,
         sizes: '192x192',
         type: 'image/png',
       },
       {
-        src: '/icon?size=512',
+        src: `/icon?v=${APP_ICON_VERSION}`,
         sizes: '512x512',
         type: 'image/png',
       },
       {
-        src: '/apple-icon',
+        src: `/apple-icon?v=${APP_ICON_VERSION}`,
         sizes: '180x180',
         type: 'image/png',
       },

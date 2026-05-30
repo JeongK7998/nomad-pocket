@@ -1,11 +1,11 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 
 export interface LineChartDataPoint {
-  month: number           // 1-12
-  actual: number | null   // null = 데이터 없음 (미래 월)
-  target: number | null   // null = 목표 없음
+  month: number
+  actual: number | null
+  target: number | null
 }
 
 interface Props {
@@ -13,13 +13,13 @@ interface Props {
   currentMonth: number
 }
 
-const MONTH_LABELS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
+const MONTH_LABELS = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11', '12']
 const FONT = 'Pretendard Variable, sans-serif'
 
 function fmtShort(n: number): string {
   if (n >= 100_000_000) return `₩${(n / 100_000_000).toFixed(1)}억`
-  if (n >= 1_000_000)   return `₩${(n / 1_000_000).toFixed(0)}M`
-  if (n >= 1_000)       return `₩${(n / 1_000).toFixed(0)}K`
+  if (n >= 1_000_000) return `₩${(n / 1_000_000).toFixed(0)}M`
+  if (n >= 1_000) return `₩${(n / 1_000).toFixed(0)}K`
   return `₩${n}`
 }
 
@@ -27,80 +27,289 @@ function fmtFull(n: number): string {
   return '₩' + n.toLocaleString('ko-KR')
 }
 
-// ── Y축 스케일 계산 ──────────────────────────────────────────
-function computeScale(data: LineChartDataPoint[]): { yTicks: number[]; maxVal: number } {
-  const vals = data.flatMap(d => [d.actual ?? 0, d.target ?? 0]).filter(v => v > 0)
+function getSeriesValues(data: LineChartDataPoint[]) {
+  return data.flatMap((d) => [d.actual ?? 0, d.target ?? 0]).filter((v) => v > 0)
+}
+
+function computeDesktopScale(data: LineChartDataPoint[]) {
+  const vals = getSeriesValues(data)
   const rawMax = Math.max(...vals, 1)
   const magnitude = Math.pow(10, Math.floor(Math.log10(rawMax)))
   const maxVal = Math.ceil(rawMax / magnitude) * magnitude
-  const step = maxVal / 4
-  const yTicks = [maxVal, maxVal - step, maxVal - step * 2, maxVal - step * 3, 0]
-  return { yTicks, maxVal }
+  const minVal = 0
+  const step = (maxVal - minVal) / 4
+  const yTicks = [maxVal, maxVal - step, maxVal - step * 2, maxVal - step * 3, minVal]
+  return { minVal, maxVal, yTicks }
 }
 
-// ── SVG 좌표 ──────────────────────────────────────────────────
-const PAD = { top: 24, right: 24, bottom: 44, left: 72 }
-const VW  = 760   // viewBox width
-const VH  = 280   // viewBox height
-const CW  = VW - PAD.left - PAD.right
-const CH  = VH - PAD.top  - PAD.bottom
+function computeMobileScale(data: LineChartDataPoint[]) {
+  const vals = getSeriesValues(data)
+  const rawMax = Math.max(...vals, 1)
+  const rawMin = Math.min(...vals, rawMax)
+  const range = Math.max(rawMax - rawMin, rawMax * 0.05)
+  const padding = Math.max(range * 0.06, rawMax * 0.01)
+  const minVal = Math.max(0, rawMin - padding)
+  const maxVal = rawMax + padding
+  const step = (maxVal - minVal) / 3
+  const yTicks = [maxVal, maxVal - step, maxVal - step * 2, minVal]
+  return { minVal, maxVal, yTicks }
+}
 
-export default function MonthlyLineChart({ data, currentMonth }: Props) {
-  const [hovered, setHovered] = useState<number | null>(null)
-  const { yTicks, maxVal } = computeScale(data)
+function buildTargetPath(
+  data: LineChartDataPoint[],
+  toX: (month: number) => number,
+  toY: (value: number) => number,
+  width: number
+) {
+  const targetPts = data.filter((d) => d.target !== null)
+  if (targetPts.length === 0) return ''
+
+  const firstY = toY(targetPts[0].target!).toFixed(1)
+  if (targetPts.length === 1) {
+    return `M0,${firstY} L${width.toFixed(1)},${firstY}`
+  }
+
+  let path = `M0,${firstY} L${toX(targetPts[0].month).toFixed(1)},${firstY}`
+
+  for (let i = 1; i < targetPts.length; i++) {
+    const curr = targetPts[i]
+    const prev = targetPts[i - 1]
+    const currX = toX(curr.month).toFixed(1)
+    const currY = toY(curr.target!).toFixed(1)
+    const prevY = toY(prev.target!).toFixed(1)
+
+    if (curr.target !== prev.target) {
+      path += ` L${currX},${prevY}`
+      path += ` L${currX},${currY}`
+    } else {
+      path += ` L${currX},${currY}`
+    }
+  }
+
+  const lastY = toY(targetPts[targetPts.length - 1].target!).toFixed(1)
+  path += ` L${width.toFixed(1)},${lastY}`
+  return path
+}
+
+function MobileChart({
+  data,
+  currentMonth,
+  hovered,
+  setHovered,
+}: {
+  data: LineChartDataPoint[]
+  currentMonth: number
+  hovered: number | null
+  setHovered: (month: number | null) => void
+}) {
+  const selectedMonth = hovered ?? currentMonth
+  const selected = data.find((point) => point.month === selectedMonth)
+
+  const { minVal, maxVal, yTicks } = computeMobileScale(data)
+  const PAD = { top: 6, right: 6, bottom: 22, left: 50 }
+  const VW = 360
+  const VH = 142
+  const CW = VW - PAD.left - PAD.right
+  const CH = VH - PAD.top - PAD.bottom
+  const safeRange = Math.max(maxVal - minVal, 1)
 
   const toX = (month: number) => ((month - 1) / 11) * CW
-  const toY = (val: number)   => CH - (val / maxVal) * CH
+  const toY = (value: number) => CH - ((value - minVal) / safeRange) * CH
 
-  // 실제 라인: 현재 월까지만
-  const actualPts = data.filter(d => d.actual !== null && d.month <= currentMonth)
+  const actualPts = data.filter((d) => d.actual !== null && d.month <= currentMonth)
   const actualPath = actualPts.length > 1
     ? actualPts.map((d, i) => `${i === 0 ? 'M' : 'L'}${toX(d.month).toFixed(1)},${toY(d.actual!).toFixed(1)}`).join(' ')
     : ''
+  const targetPath = buildTargetPath(data, toX, toY, CW)
 
-  // ── 목표 라인: 계단형(step) 경로 ─────────────────────────────
-  // • 데이터가 없으면 빈 문자열
-  // • 단일 값이면 Jan 왼쪽 ~ Dec 오른쪽 전체 수평선
-  // • 값이 바뀌는 달부터 꺾임: 수평 이동 → 수직 이동 → 수평 이동
-  const targetPts = data.filter(d => d.target !== null)
-  const targetPath = (() => {
-    if (targetPts.length === 0) return ''
+  return (
+    <div className="w-full">
+      <div className="rounded-[18px] bg-[#f8fbff] px-[10px] py-[10px]">
+        <svg
+          viewBox={`0 0 ${VW} ${VH}`}
+          style={{ width: '100%', height: VH, display: 'block' }}
+        >
+          <g transform={`translate(${PAD.left},${PAD.top})`}>
+            {yTicks.map((tick) => (
+              <g key={tick}>
+                <line
+                  x1={0}
+                  y1={toY(tick)}
+                  x2={CW}
+                  y2={toY(tick)}
+                  stroke="#dfe8f7"
+                  strokeWidth={1}
+                  strokeDasharray="4 4"
+                />
+                <text
+                  x={-8}
+                  y={toY(tick)}
+                  textAnchor="end"
+                  dominantBaseline="middle"
+                  fontSize={12}
+                  fill="#708198"
+                  fontFamily={FONT}
+                  fontWeight={600}
+                >
+                  {fmtShort(tick)}
+                </text>
+              </g>
+            ))}
 
-    // 첫 번째 값
-    const firstY = toY(targetPts[0].target!).toFixed(1)
+            {targetPath && (
+              <path
+                d={targetPath}
+                fill="none"
+                stroke="#a8b4c8"
+                strokeWidth={1.5}
+                strokeDasharray="5 4"
+              />
+            )}
 
-    if (targetPts.length === 1) {
-      // 단일 포인트 → 전체 수평선
-      return `M0,${firstY} L${CW.toFixed(1)},${firstY}`
-    }
+            {actualPath && (
+              <path
+                d={actualPath}
+                fill="none"
+                stroke="#5d90ff"
+                strokeWidth={2.5}
+                strokeLinejoin="round"
+                strokeLinecap="round"
+              />
+            )}
 
-    // 복수 포인트 → step 라인
-    // 시작: 왼쪽 끝(0)에서 첫 번째 포인트까지 수평
-    let path = `M0,${firstY} L${toX(targetPts[0].month).toFixed(1)},${firstY}`
+            {data.map((d) => {
+              const x = toX(d.month)
 
-    for (let i = 1; i < targetPts.length; i++) {
-      const curr  = targetPts[i]
-      const prev  = targetPts[i - 1]
-      const currX = toX(curr.month).toFixed(1)
-      const currY = toY(curr.target!).toFixed(1)
-      const prevY = toY(prev.target!).toFixed(1)
+              if (d.month > currentMonth) {
+                if (d.target === null) return null
+                return (
+                  <circle
+                    key={d.month}
+                    cx={x}
+                    cy={toY(d.target)}
+                    r={2.5}
+                    fill="white"
+                    stroke="#cfe0fb"
+                    strokeWidth={1.25}
+                  />
+                )
+              }
 
-      if (curr.target !== prev.target) {
-        // 값이 달라지면: 현재 X에서 수직으로 꺾임 후 수평 연장
-        path += ` L${currX},${prevY}`  // 수평: 이전 Y 유지하며 현재 X까지
-        path += ` L${currX},${currY}`  // 수직: 새 Y로 이동
-      } else {
-        // 값이 같으면: 그냥 수평 연장
-        path += ` L${currX},${currY}`
-      }
-    }
+              if (d.actual === null) return null
+              const isOver = d.target !== null && d.actual > d.target
+              const isActive = selectedMonth === d.month
 
-    // 마지막 포인트에서 오른쪽 끝까지 수평 연장
-    const lastY = toY(targetPts[targetPts.length - 1].target!).toFixed(1)
-    path += ` L${CW.toFixed(1)},${lastY}`
+              return (
+                <g key={d.month}>
+                  <circle
+                    cx={x}
+                    cy={toY(d.actual)}
+                    r={12}
+                    fill="transparent"
+                    onClick={() => setHovered(d.month)}
+                    style={{ cursor: 'pointer' }}
+                  />
+                  <circle
+                    cx={x}
+                    cy={toY(d.actual)}
+                    r={isActive ? 4.5 : 3.5}
+                    fill={isOver ? '#f27d68' : '#5d90ff'}
+                    stroke="white"
+                    strokeWidth={1.6}
+                  />
+                </g>
+              )
+            })}
 
-    return path
-  })()
+            {data.map((d) => (
+              <text
+                key={d.month}
+                x={toX(d.month)}
+                y={CH + 18}
+                textAnchor="middle"
+                fontSize={12}
+                fill={selectedMonth === d.month ? '#004ea7' : '#708198'}
+                fontFamily={FONT}
+                fontWeight={selectedMonth === d.month ? 700 : 500}
+              >
+                {MONTH_LABELS[d.month - 1]}
+              </text>
+            ))}
+          </g>
+        </svg>
+      </div>
+
+      <div className="mt-[10px] flex items-center justify-center gap-[14px] text-[11px] text-[#708198]" style={{ fontFamily: FONT }}>
+        <span className="inline-flex items-center gap-[5px]">
+          <svg width="22" height="8" viewBox="0 0 22 8" fill="none" aria-hidden="true">
+            <line x1="0" y1="4" x2="22" y2="4" stroke="#5d90ff" strokeWidth="2.5" strokeLinecap="round" />
+            <circle cx="11" cy="4" r="3.5" fill="#5d90ff" />
+          </svg>
+          실제 지출
+        </span>
+        <span className="inline-flex items-center gap-[5px]">
+          <svg width="22" height="8" viewBox="0 0 22 8" fill="none" aria-hidden="true">
+            <line x1="0" y1="4" x2="22" y2="4" stroke="#a8b4c8" strokeWidth="1.5" strokeDasharray="5 4" />
+          </svg>
+          목표 라인
+        </span>
+        <span className="inline-flex items-center gap-[5px]">
+          <svg width="8" height="8" viewBox="0 0 8 8" fill="none" aria-hidden="true">
+            <circle cx="4" cy="4" r="4" fill="#5d90ff" />
+          </svg>
+          달성
+        </span>
+        <span className="inline-flex items-center gap-[5px]">
+          <svg width="8" height="8" viewBox="0 0 8 8" fill="none" aria-hidden="true">
+            <circle cx="4" cy="4" r="4" fill="#f27d68" />
+          </svg>
+          초과
+        </span>
+      </div>
+
+      {selected && selected.actual !== null && (
+        <div
+          className="mt-[8px] rounded-[14px] bg-[#f3f7fd] px-[12px] py-[10px] text-center"
+          style={{ fontFamily: FONT }}
+        >
+          <div className="text-[11px] font-semibold text-[#708198]">{selected.month}월 실적</div>
+          <div className="mt-[2px] text-[18px] font-bold text-[#18202a]">{fmtFull(selected.actual)}</div>
+          {selected.target !== null && (
+            <div className="mt-[2px] text-[12px] text-[#708198]">목표 {fmtFull(selected.target)}</div>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function DesktopChart({
+  data,
+  currentMonth,
+  hovered,
+  setHovered,
+}: {
+  data: LineChartDataPoint[]
+  currentMonth: number
+  hovered: number | null
+  setHovered: (month: number | null) => void
+}) {
+  const { minVal, maxVal, yTicks } = computeDesktopScale(data)
+  const PAD = { top: 24, right: 24, bottom: 44, left: 72 }
+  const VW = 760
+  const VH = 280
+  const CW = VW - PAD.left - PAD.right
+  const CH = VH - PAD.top - PAD.bottom
+  const safeRange = Math.max(maxVal - minVal, 1)
+
+  const toX = (month: number) => ((month - 1) / 11) * CW
+  const toY = (value: number) => CH - ((value - minVal) / safeRange) * CH
+
+  const actualPts = data.filter((d) => d.actual !== null && d.month <= currentMonth)
+  const actualPath = actualPts.length > 1
+    ? actualPts.map((d, i) => `${i === 0 ? 'M' : 'L'}${toX(d.month).toFixed(1)},${toY(d.actual!).toFixed(1)}`).join(' ')
+    : ''
+  const targetPath = buildTargetPath(data, toX, toY, CW)
 
   return (
     <div className="w-full">
@@ -110,26 +319,31 @@ export default function MonthlyLineChart({ data, currentMonth }: Props) {
         onMouseLeave={() => setHovered(null)}
       >
         <g transform={`translate(${PAD.left},${PAD.top})`}>
-
-          {/* ── 수평 그리드 + Y축 레이블 ── */}
           {yTicks.map((tick) => (
             <g key={tick}>
               <line
-                x1={0} y1={toY(tick).toFixed(1)}
-                x2={CW} y2={toY(tick).toFixed(1)}
-                stroke="#e6e8f1" strokeWidth={1} strokeDasharray="4 4"
+                x1={0}
+                y1={toY(tick)}
+                x2={CW}
+                y2={toY(tick)}
+                stroke="#e6e8f1"
+                strokeWidth={1}
+                strokeDasharray="4 4"
               />
               <text
-                x={-10} y={toY(tick)}
-                textAnchor="end" dominantBaseline="middle"
-                fontSize={10} fill="#6c7b8e" fontFamily={FONT}
+                x={-10}
+                y={toY(tick)}
+                textAnchor="end"
+                dominantBaseline="middle"
+                fontSize={10}
+                fill="#6c7b8e"
+                fontFamily={FONT}
               >
                 {fmtShort(tick)}
               </text>
             </g>
           ))}
 
-          {/* ── 목표 라인 (대시) ── */}
           {targetPath && (
             <path
               d={targetPath}
@@ -141,86 +355,111 @@ export default function MonthlyLineChart({ data, currentMonth }: Props) {
             />
           )}
 
-          {/* ── 실제 라인 ── */}
           {actualPath && (
-            <path d={actualPath} fill="none" stroke="#5898ff" strokeWidth={2.5} strokeLinejoin="round" strokeLinecap="round" />
+            <path
+              d={actualPath}
+              fill="none"
+              stroke="#5898ff"
+              strokeWidth={2.5}
+              strokeLinejoin="round"
+              strokeLinecap="round"
+            />
           )}
 
-          {/* ── 데이터 포인트 ── */}
           {data.map((d) => {
             const x = toX(d.month)
             const isHov = hovered === d.month
 
-            // 미래 월: 목표 있으면 빈 원
             if (d.month > currentMonth) {
               if (d.target === null) return null
               return (
                 <circle
                   key={d.month}
-                  cx={x} cy={toY(d.target)}
-                  r={3} fill="white" stroke="#d8e9fd" strokeWidth={1.5}
+                  cx={x}
+                  cy={toY(d.target)}
+                  r={3}
+                  fill="white"
+                  stroke="#d8e9fd"
+                  strokeWidth={1.5}
                 />
               )
             }
 
-            // 과거/현재 월: actual 있으면 채운 원
             if (d.actual === null) return null
-            const isOver  = d.target !== null && d.actual > d.target
+            const isOver = d.target !== null && d.actual > d.target
             const dotColor = isOver ? '#ff786b' : '#5898ff'
             const dotY = toY(d.actual)
 
             return (
               <g key={d.month}>
-                {/* 호버 감지 투명 영역 */}
                 <circle
-                  cx={x} cy={dotY} r={20}
+                  cx={x}
+                  cy={dotY}
+                  r={20}
                   fill="transparent"
                   style={{ cursor: 'pointer' }}
                   onMouseEnter={() => setHovered(d.month)}
                 />
-
-                {/* 실제 dot */}
                 <circle
-                  cx={x} cy={dotY}
+                  cx={x}
+                  cy={dotY}
                   r={isHov ? 6 : 4}
                   fill={dotColor}
                   stroke="white"
                   strokeWidth={2}
                   style={{ transition: 'r 0.1s' }}
                 />
-
-                {/* 호버 툴팁 */}
-                {isHov && (() => {
-                  const tipW = 136
-                  const tipH = d.target !== null ? 70 : 50
-                  const tipX = x > CW / 2 ? x - tipW - 8 : x + 12
-                  const tipY = dotY - tipH / 2
-                  return (
-                    <g>
-                      <rect x={tipX} y={tipY} width={tipW} height={tipH} rx={8} fill="#18202a" />
-                      <text x={tipX + 12} y={tipY + 18} fontSize={10} fill="#9ab4d0" fontFamily={FONT}>
-                        {MONTH_LABELS[d.month - 1]} 실제 지출
+                {isHov && (
+                  <g>
+                    <rect
+                      x={x > CW / 2 ? x - 144 : x + 12}
+                      y={dotY - 35}
+                      width={136}
+                      height={70}
+                      rx={8}
+                      fill="#18202a"
+                    />
+                    <text
+                      x={(x > CW / 2 ? x - 144 : x + 12) + 12}
+                      y={dotY - 17}
+                      fontSize={10}
+                      fill="#9ab4d0"
+                      fontFamily={FONT}
+                    >
+                      {d.month}월 실제 지출
+                    </text>
+                    <text
+                      x={(x > CW / 2 ? x - 144 : x + 12) + 12}
+                      y={dotY + 1}
+                      fontSize={13}
+                      fill={dotColor}
+                      fontFamily={FONT}
+                      fontWeight="bold"
+                    >
+                      {fmtShort(d.actual)}
+                    </text>
+                    {d.target !== null && (
+                      <text
+                        x={(x > CW / 2 ? x - 144 : x + 12) + 12}
+                        y={dotY + 21}
+                        fontSize={10}
+                        fill="#6c7b8e"
+                        fontFamily={FONT}
+                      >
+                        목표: {fmtShort(d.target)}
                       </text>
-                      <text x={tipX + 12} y={tipY + 36} fontSize={13} fill={dotColor} fontFamily={FONT} fontWeight="bold">
-                        {fmtShort(d.actual)}
-                      </text>
-                      {d.target !== null && (
-                        <text x={tipX + 12} y={tipY + 56} fontSize={10} fill="#6c7b8e" fontFamily={FONT}>
-                          목표: {fmtShort(d.target)}
-                        </text>
-                      )}
-                    </g>
-                  )
-                })()}
+                    )}
+                  </g>
+                )}
               </g>
             )
           })}
 
-          {/* ── X축 레이블 ── */}
           {data.map((d) => (
             <text
               key={d.month}
-              x={toX(d.month)} y={CH + 24}
+              x={toX(d.month)}
+              y={CH + 24}
               textAnchor="middle"
               fontSize={11}
               fill={d.month === currentMonth ? '#004ea7' : '#6c7b8e'}
@@ -231,7 +470,6 @@ export default function MonthlyLineChart({ data, currentMonth }: Props) {
             </text>
           ))}
 
-          {/* ── 범례 ── */}
           <g transform={`translate(0, ${CH + 38})`}>
             <line x1={0} y1={5} x2={20} y2={5} stroke="#5898ff" strokeWidth={2.5} strokeLinecap="round" />
             <circle cx={10} cy={5} r={3.5} fill="#5898ff" />
@@ -246,20 +484,54 @@ export default function MonthlyLineChart({ data, currentMonth }: Props) {
             <circle cx={230} cy={5} r={4} fill="#ff786b" stroke="white" strokeWidth={1.5} />
             <text x={240} y={9} fontSize={10} fill="#6c7b8e" fontFamily={FONT}>초과</text>
           </g>
-
         </g>
       </svg>
 
-      {/* 전체 금액 호버 표시 */}
       {hovered !== null && (() => {
-        const d = data.find(p => p.month === hovered)
-        if (!d || d.actual === null) return null
+        const selected = data.find((p) => p.month === hovered)
+        if (!selected || selected.actual === null) return null
         return (
           <div className="mt-[4px] text-center text-[11px] text-[#6c7b8e]" style={{ fontFamily: FONT }}>
-            {fmtFull(d.actual)} {d.target !== null ? `/ 목표 ${fmtFull(d.target)}` : ''}
+            {fmtFull(selected.actual)} {selected.target !== null ? `/ 목표 ${fmtFull(selected.target)}` : ''}
           </div>
         )
       })()}
     </div>
+  )
+}
+
+export default function MonthlyLineChart({ data, currentMonth }: Props) {
+  const [hovered, setHovered] = useState<number | null>(currentMonth)
+  const [isMobile, setIsMobile] = useState(false)
+
+  useEffect(() => {
+    const onResize = () => setIsMobile(window.innerWidth < 768)
+    onResize()
+    window.addEventListener('resize', onResize)
+    return () => window.removeEventListener('resize', onResize)
+  }, [])
+
+  useEffect(() => {
+    setHovered(currentMonth)
+  }, [currentMonth, isMobile])
+
+  if (isMobile) {
+    return (
+      <MobileChart
+        data={data}
+        currentMonth={currentMonth}
+        hovered={hovered}
+        setHovered={setHovered}
+      />
+    )
+  }
+
+  return (
+    <DesktopChart
+      data={data}
+      currentMonth={currentMonth}
+      hovered={hovered}
+      setHovered={setHovered}
+    />
   )
 }

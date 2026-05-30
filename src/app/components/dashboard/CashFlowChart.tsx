@@ -7,15 +7,32 @@ export type DashMode = 'YEARLY' | 'MONTHLY' | 'WEEKLY' | 'REGION' | 'TAGGING'
 
 const BAR_W = 32
 const FONT  = "font-['Pretendard_Variable',sans-serif]"
+const MONTH_LABELS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
 
 // ── 포맷 헬퍼 ───────────────────────────────────────────────
-function fmtY(v: number, mode: DashMode) {
-  if (v === 0) return '₩0'
-  if (mode === 'YEARLY')  return `₩${(v / 100_000_000).toFixed(0)}억`
-  if (mode === 'WEEKLY')  return `₩${(v / 1_000_000).toFixed(1)}M`
-  return `₩${(v / 1_000_000).toFixed(0)}M`
+function fmtY(v: number) {
+  if (v === 0) return '0'
+  if (v >= 100_000_000) {
+    const eok = v / 100_000_000
+    return `${Number.isInteger(eok) ? eok.toFixed(0) : eok.toFixed(1)}억`
+  }
+
+  const man = v / 10_000
+  if (man >= 1000) return `${Math.round(man / 1000) * 1000}만`
+  if (man >= 100) return `${Math.round(man / 100) * 100}만`
+  return `${Math.round(man / 10) * 10}만`
 }
 function fmtNum(v: number) { return '₩' + v.toLocaleString('ko-KR') }
+
+function compactAxisLabel(label: string, mode: DashMode) {
+  if (mode === 'YEARLY' && /^\d{4}$/.test(label)) return label.slice(2)
+  if (mode === 'WEEKLY') return label.replace(/^W0?/, '')
+
+  const monthIndex = MONTH_LABELS.findIndex((month) => month.toLowerCase() === label.slice(0, 3).toLowerCase())
+  if (monthIndex >= 0) return String(monthIndex + 1)
+
+  return label
+}
 
 // ── 공통 바 타입 ─────────────────────────────────────────────
 interface Bar { label: string; income: number | null; expense: number | null }
@@ -165,7 +182,7 @@ const MAX_MONTHLY     = 50_000_000
 function defaultSelected(bars: Bar[]): number {
   // 데이터 있는 마지막 항목
   let last = 0
-  bars.forEach((b, i) => { if (b.income !== null) last = i })
+  bars.forEach((b, i) => { if (b.income !== null || b.expense !== null) last = i })
   return last
 }
 
@@ -173,10 +190,25 @@ function defaultSelected(bars: Bar[]): number {
 function computeYTicks(bars: Bar[]): { yTicks: number[]; maxVal: number } {
   const allVals = bars.flatMap(b => [b.income ?? 0, b.expense ?? 0])
   const rawMax = Math.max(...allVals, 1)
-  const magnitude = Math.pow(10, Math.floor(Math.log10(rawMax)))
-  const maxVal = Math.ceil(rawMax / magnitude) * magnitude
-  const step = maxVal / 4
-  const yTicks = [maxVal, maxVal - step, maxVal - 2 * step, maxVal - 3 * step, 0]
+  const baseStep = Math.pow(10, Math.max(0, Math.floor(Math.log10(rawMax)) - 1))
+  const candidateSteps = [baseStep, baseStep * 2, baseStep * 10, baseStep * 20]
+
+  let yTicks = [Math.ceil(rawMax / candidateSteps[candidateSteps.length - 1]) * candidateSteps[candidateSteps.length - 1], 0]
+
+  for (const step of candidateSteps) {
+    const maxTick = Math.ceil(rawMax / step) * step
+    const ticks: number[] = []
+    for (let value = maxTick; value >= 0; value -= step) {
+      ticks.push(value)
+    }
+
+    if (ticks.length >= 3 && ticks.length <= 5) {
+      yTicks = ticks
+      break
+    }
+  }
+
+  const maxVal = yTicks[0]
   return { yTicks, maxVal }
 }
 
@@ -191,9 +223,11 @@ interface Props {
   onNextPage?: () => void     // WEEKLY: 다음 묶음(더 최신 주차)
   canPrevPage?: boolean
   canNextPage?: boolean
+  compact?: boolean
+  dark?: boolean
 }
 
-export default function CashFlowChart({ mode, weekPage, selectedRegion, selectedTag, barsOverride, onPrevPage, onNextPage, canPrevPage, canNextPage }: Props) {
+export default function CashFlowChart({ mode, weekPage, selectedRegion, selectedTag, barsOverride, onPrevPage, onNextPage, canPrevPage, canNextPage, compact = false, dark = false }: Props) {
 
   // ── 모드별 데이터 계산 ──────────────────────────────────────
   const { bars, yTicks, maxVal } = useMemo(() => {
@@ -240,39 +274,59 @@ export default function CashFlowChart({ mode, weekPage, selectedRegion, selected
 
   const [selectedIdx, setSelectedIdx] = useState(() => defaultSelected(bars))
   const [hoverIdx,    setHoverIdx]    = useState<number | null>(null)
+  const [outlinedIdx, setOutlinedIdx] = useState<number | null>(null)
 
   // 모드/페이지/지역 변경 시 선택 초기화
   useEffect(() => {
     setSelectedIdx(defaultSelected(bars))
+    setOutlinedIdx(null)
   }, [bars])
 
+  const axisWidth = compact ? 32 : 56
+  const plotLeftGap = compact ? 4 : 16
+  const chartTopPadding = compact ? 18 : 22
+  const chartBottomPadding = compact ? 14 : 18
+  const barWidth = compact ? Math.max(6, Math.round(BAR_W * 0.2)) : BAR_W
+  const yPositions = yTicks.map((_, i) => (i / Math.max(1, yTicks.length - 1)) * 100)
+  const mutedTextColor = dark ? '#aebbd0' : '#6c7b8e'
+  const selectedTextColor = dark ? '#ffffff' : '#004ea7'
+  const gridColor = dark ? 'rgba(216,233,253,0.18)' : '#e4e5e9'
+
   return (
-    <div className="flex h-full gap-[6px] min-h-0">
+    <div className="flex h-full min-h-0 flex-col">
 
-      {/* ── Y축 레이블 ── */}
-      <div className="flex flex-col justify-between pb-[22px] flex-shrink-0 w-[36px]">
-        {yTicks.map((tick) => (
-          <span key={tick} className={`block text-left text-[11px] leading-none text-[#6c7b8e] ${FONT}`}>
-            {fmtY(tick, mode)}
-          </span>
-        ))}
-      </div>
+      {/* ── 플롯 영역 ── */}
+      <div className="relative min-h-0 flex-1" style={{ paddingTop: chartTopPadding, paddingBottom: chartBottomPadding }}>
 
-      {/* ── 차트 영역 ── */}
-      <div className="flex-1 flex flex-col min-w-0 min-h-0">
-
-        {/* 그리드 + 바 */}
-        <div className="flex-1 relative min-h-0">
-
-          {/* 수평 점선 그리드 */}
+        {/* ── Y축 레이블 ── */}
+        <div className="absolute bottom-0 left-0 top-0" style={{ width: axisWidth }}>
           {yTicks.map((tick, i) => (
-            <div
+            <span
               key={tick}
-              className="absolute left-0 right-0 border-t border-dashed border-[#e4e5e9]"
-              style={{ top: `${(i / (yTicks.length - 1)) * 100}%` }}
-            />
+              className={`absolute left-0 block w-full text-left leading-none ${FONT} ${compact ? 'text-[9px]' : 'text-[11px]'}`}
+              style={{ top: `${yPositions[i]}%`, transform: 'translateY(-50%)', color: mutedTextColor }}
+            >
+              {fmtY(tick)}
+            </span>
           ))}
+        </div>
 
+        {/* 수평 점선 그리드 */}
+        {yTicks.map((tick, i) => (
+          <div
+            key={tick}
+            className="absolute right-0 border-t border-dashed"
+            style={{
+              left: axisWidth + plotLeftGap,
+              top: `${yPositions[i]}%`,
+              transform: 'translateY(-0.5px)',
+              borderColor: gridColor,
+            }}
+          />
+        ))}
+
+        {/* ── 차트 영역 ── */}
+        <div className="absolute bottom-0 right-0 top-0 min-w-0" style={{ left: axisWidth + plotLeftGap }}>
           {/* 네비게이션 오버레이 버튼 */}
           {showLeftBtn && (
             <button
@@ -297,22 +351,24 @@ export default function CashFlowChart({ mode, weekPage, selectedRegion, selected
           <div className="absolute inset-0 flex items-end">
             <div className="w-full h-full flex items-end justify-around">
               {displayedBars.map((d, i) => {
-                const isSelected = i === selectedIdx
                 const isHovered  = i === hoverIdx
-                const hasData    = d.income !== null && d.expense !== null
+                const hasData    = d.income !== null || d.expense !== null
 
                 if (!hasData) {
                   return (
                     <div
                       key={d.label}
                       className="flex-1 h-full flex items-end justify-center cursor-pointer"
-                      onClick={() => setSelectedIdx(i)}
+                      onClick={() => {
+                        setSelectedIdx(i)
+                        setOutlinedIdx(i)
+                      }}
                     />
                   )
                 }
 
-                const income   = d.income!
-                const expense  = d.expense!
+                const income   = d.income ?? 0
+                const expense  = d.expense ?? 0
                 const incomeH  = (income  / maxVal) * 100
                 const expenseH = (expense / maxVal) * 100
                 const maxH     = Math.max(incomeH, expenseH)
@@ -325,11 +381,14 @@ export default function CashFlowChart({ mode, weekPage, selectedRegion, selected
                   <div
                     key={d.label}
                     className="flex-1 h-full flex items-end justify-center cursor-pointer"
-                    onClick={() => setSelectedIdx(i)}
+                    onClick={() => {
+                      setSelectedIdx(i)
+                      setOutlinedIdx(i)
+                    }}
                     onMouseEnter={() => setHoverIdx(i)}
                     onMouseLeave={() => setHoverIdx(null)}
                   >
-                    <div className="relative flex items-end justify-center" style={{ width: BAR_W, height: '100%' }}>
+                    <div className="relative flex items-end justify-center" style={{ width: barWidth, height: '100%' }}>
 
                       {/* 호버 팝업 */}
                       {isHovered && (
@@ -338,8 +397,8 @@ export default function CashFlowChart({ mode, weekPage, selectedRegion, selected
                           style={{
                             bottom: `${maxH / 2}%`,
                             ...(tooltipRight
-                              ? { left: `calc(${BAR_W}px + 8px)` }
-                              : { right: `calc(${BAR_W}px + 8px)` }),
+                              ? { left: `calc(${barWidth}px + 8px)` }
+                              : { right: `calc(${barWidth}px + 8px)` }),
                           }}
                         >
                           <div className="flex gap-[12px]">
@@ -356,7 +415,7 @@ export default function CashFlowChart({ mode, weekPage, selectedRegion, selected
                       )}
 
                       {/* 선택 월 테두리 */}
-                      {isSelected && (
+                      {outlinedIdx === i && (
                         <div
                           className="absolute bottom-0 left-0 right-0 rounded-[4px] border-2 border-[#5898ff] z-30 pointer-events-none"
                           style={{ height: `${maxH}%` }}
@@ -380,23 +439,23 @@ export default function CashFlowChart({ mode, weekPage, selectedRegion, selected
             </div>
           </div>
         </div>
+      </div>
 
-        {/* X축 레이블 */}
-        <div className="flex justify-around pt-[8px] flex-shrink-0">
-          {displayedBars.map((d, i) => (
-            <div key={d.label} className="flex-1 text-center">
+      {/* X축 레이블 */}
+      <div className={`flex flex-shrink-0 justify-around ${compact ? 'pt-[4px]' : 'pt-[8px]'}`} style={{ paddingLeft: axisWidth + plotLeftGap }}>
+        {displayedBars.map((d, i) => (
+          <div key={d.label} className="flex-1 text-center">
               <span
-                className={`text-[12px] font-bold ${FONT} uppercase`}
+                className={`font-bold ${FONT} uppercase ${compact ? 'text-[10px]' : 'text-[12px]'}`}
                 style={{
                   letterSpacing: '-0.0375em',
-                  color: i === selectedIdx ? '#004ea7' : '#6c7b8e',
+                  color: i === selectedIdx ? selectedTextColor : mutedTextColor,
                 }}
               >
-                {d.label}
-              </span>
-            </div>
-          ))}
-        </div>
+              {compact ? compactAxisLabel(d.label, mode) : d.label}
+            </span>
+          </div>
+        ))}
       </div>
     </div>
   )

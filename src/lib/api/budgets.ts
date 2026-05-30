@@ -7,13 +7,47 @@ type MonthlyActualRow = ActualRow & { date: string }
 
 // ── 시스템 목표 식별 헬퍼 ────────────────────────────────────────
 export function isSystemMonthlyGoal(b: Budget) {
-  return b.period_type === 'monthly' && b.filter_type === 'total' && b.name.startsWith('월간 지출한도')
+  const legacySystemName = (b.name ?? '').startsWith('월간 지출한도')
+  return b.period_type === 'monthly' && b.filter_type === 'total' && (b.is_system === true || legacySystemName)
 }
 export function isSystemYearlyGoal(b: Budget) {
-  return b.period_type === 'yearly' && b.filter_type === 'total' && b.name.startsWith('년간 지출한도')
+  const legacySystemName = (b.name ?? '').startsWith('년간 지출한도')
+  return b.period_type === 'yearly' && b.filter_type === 'total' && (b.is_system === true || legacySystemName)
 }
 export function isSystemGoal(b: Budget) {
   return isSystemMonthlyGoal(b) || isSystemYearlyGoal(b)
+}
+
+function sortSystemBudgetCandidates(rows: Budget[]): Budget[] {
+  return [...rows].sort((a, b) => {
+    if (a.is_system !== b.is_system) return a.is_system ? -1 : 1
+    return new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+  })
+}
+
+async function findSystemMonthlyBudget(year: number, month: number): Promise<Budget | null> {
+  const { data, error } = await supabase
+    .from('budgets')
+    .select('*')
+    .eq('period_type', 'monthly')
+    .eq('year', year)
+    .eq('month', month)
+    .eq('filter_type', 'total')
+    .order('created_at', { ascending: true })
+  if (error) throw error
+  return sortSystemBudgetCandidates(((data ?? []) as Budget[]).filter(isSystemMonthlyGoal))[0] ?? null
+}
+
+async function findSystemYearlyBudget(year: number): Promise<Budget | null> {
+  const { data, error } = await supabase
+    .from('budgets')
+    .select('*')
+    .eq('period_type', 'yearly')
+    .eq('year', year)
+    .eq('filter_type', 'total')
+    .order('created_at', { ascending: true })
+  if (error) throw error
+  return sortSystemBudgetCandidates(((data ?? []) as Budget[]).filter(isSystemYearlyGoal))[0] ?? null
 }
 
 // ── 조회 ───────────────────────────────────────────────────────
@@ -27,21 +61,11 @@ export async function getSystemMonthlyBudgets(year: number): Promise<Budget[]> {
     .eq('filter_type', 'total')
     .order('month', { ascending: true })
   if (error) throw error
-  return (data ?? [] as Budget[]).filter(isSystemMonthlyGoal)
+  return sortSystemBudgetCandidates(((data ?? []) as Budget[]).filter(isSystemMonthlyGoal))
 }
 
 export async function getSystemYearlyBudget(year: number): Promise<Budget | null> {
-  const { data, error } = await supabase
-    .from('budgets')
-    .select('*')
-    .eq('period_type', 'yearly')
-    .eq('year', year)
-    .eq('filter_type', 'total')
-    .order('created_at', { ascending: true })
-    .limit(1)
-  if (error) throw error
-  const rows = (data ?? []) as Budget[]
-  return rows.find(isSystemYearlyGoal) ?? null
+  return findSystemYearlyBudget(year)
 }
 
 export async function getCustomGoals(): Promise<Budget[]> {
@@ -57,14 +81,7 @@ export async function getCustomGoals(): Promise<Budget[]> {
 // ── 시스템 목표 자동 생성 ────────────────────────────────────────
 
 export async function ensureSystemMonthlyBudget(year: number, month: number): Promise<Budget> {
-  const { data: rows } = await supabase
-    .from('budgets')
-    .select('*')
-    .eq('period_type', 'monthly')
-    .eq('year', year)
-    .eq('month', month)
-    .eq('filter_type', 'total')
-  const existing = (rows ?? [] as Budget[]).find(isSystemMonthlyGoal)
+  const existing = await findSystemMonthlyBudget(year, month)
   if (existing) return existing
 
   const prevMonth = month === 1 ? 12 : month - 1
@@ -94,27 +111,29 @@ export async function ensureSystemMonthlyBudget(year: number, month: number): Pr
     .from('budgets').insert({ ...baseInsert, is_system: true, start_date: null })
     .select().single()
   if (!e1) return r1 as Budget
+  const afterFirstFailure = await findSystemMonthlyBudget(year, month)
+  if (afterFirstFailure) return afterFirstFailure
 
   const { data: r2, error: e2 } = await supabase
     .from('budgets').insert({ ...baseInsert, is_system: true })
     .select().single()
   if (!e2) return r2 as Budget
+  const afterSecondFailure = await findSystemMonthlyBudget(year, month)
+  if (afterSecondFailure) return afterSecondFailure
 
   const { data: r3, error: e3 } = await supabase
     .from('budgets').insert(baseInsert)
     .select().single()
-  if (e3) throw e3
+  if (e3) {
+    const afterThirdFailure = await findSystemMonthlyBudget(year, month)
+    if (afterThirdFailure) return afterThirdFailure
+    throw e3
+  }
   return r3 as Budget
 }
 
 export async function ensureSystemYearlyBudget(year: number): Promise<Budget> {
-  const { data: rows } = await supabase
-    .from('budgets')
-    .select('*')
-    .eq('period_type', 'yearly')
-    .eq('year', year)
-    .eq('filter_type', 'total')
-  const existing = (rows ?? [] as Budget[]).find(isSystemYearlyGoal)
+  const existing = await findSystemYearlyBudget(year)
   if (existing) return existing
 
   const { data: prevRows } = await supabase
@@ -142,16 +161,24 @@ export async function ensureSystemYearlyBudget(year: number): Promise<Budget> {
     .from('budgets').insert({ ...baseInsert, is_system: true, start_date: null })
     .select().single()
   if (!e1) return r1 as Budget
+  const afterFirstFailure = await findSystemYearlyBudget(year)
+  if (afterFirstFailure) return afterFirstFailure
 
   const { data: r2, error: e2 } = await supabase
     .from('budgets').insert({ ...baseInsert, is_system: true })
     .select().single()
   if (!e2) return r2 as Budget
+  const afterSecondFailure = await findSystemYearlyBudget(year)
+  if (afterSecondFailure) return afterSecondFailure
 
   const { data: r3, error: e3 } = await supabase
     .from('budgets').insert(baseInsert)
     .select().single()
-  if (e3) throw e3
+  if (e3) {
+    const afterThirdFailure = await findSystemYearlyBudget(year)
+    if (afterThirdFailure) return afterThirdFailure
+    throw e3
+  }
   return r3 as Budget
 }
 

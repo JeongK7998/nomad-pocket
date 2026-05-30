@@ -1,12 +1,17 @@
 import type { Metadata, Viewport } from 'next'
 import { AppModeProvider } from '@/app/context/AppModeContext'
 import { AppShell } from '@/app/components/layout/AppShell'
+import { APP_ICON_VERSION } from '@/app/iconVersion'
 import './globals.css'
 
 export const metadata: Metadata = {
   title: 'Nomad Pocket',
   description: 'Financial Precision — 노마드 라이프스타일 개인 가계부',
   manifest: '/manifest.json',
+  icons: {
+    icon: `/icon?v=${APP_ICON_VERSION}`,
+    apple: `/apple-icon?v=${APP_ICON_VERSION}`,
+  },
   appleWebApp: {
     capable: true,
     statusBarStyle: 'default',
@@ -17,6 +22,8 @@ export const metadata: Metadata = {
 export const viewport: Viewport = {
   width: 'device-width',
   initialScale: 1,
+  maximumScale: 1,
+  userScalable: false,
   themeColor: '#004ea7',
 }
 
