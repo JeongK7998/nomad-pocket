@@ -49,7 +49,7 @@ export async function getCustomGoals(): Promise<Budget[]> {
     .eq('is_active', true)
     .order('created_at', { ascending: false })
   if (error) throw error
-  return (data ?? [] as Budget[]).filter(b => !isSystemGoal(b))
+  return ((data ?? []) as Budget[]).filter((b) => !isSystemGoal(b))
 }
 
 // ── 시스템 목표 자동 생성 ────────────────────────────────────────
