@@ -5,7 +5,7 @@ import { createClient } from '@supabase/supabase-js'
 
 const COOKIE_NAME = 'nomad_pocket_session'
 const COOKIE_MAX_AGE = 60 * 60 * 24 * 30
-type PinHashRow = { pin_hash: string | null }
+type PinHashRow = Record<'pin_hash', unknown>
 
 function getServiceClient() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL
@@ -49,8 +49,9 @@ export async function POST(request: Request) {
 
     if (error) throw error
 
-    const sharedPinHash = ((data ?? []) as PinHashRow[])[0]?.pin_hash
-    if (!sharedPinHash || !safeEqual(pinHash, sharedPinHash)) {
+    const pinHashRows = (Array.isArray(data) ? data : []) as PinHashRow[]
+    const sharedPinHash = pinHashRows[0]?.['pin_hash']
+    if (typeof sharedPinHash !== 'string' || !safeEqual(pinHash, sharedPinHash)) {
       return NextResponse.json({ error: 'Invalid PIN' }, { status: 401 })
     }
 

@@ -32,7 +32,7 @@ type QueryBody = {
   limit?: number
   single?: boolean
 }
-type PinHashRow = { pin_hash: string | null }
+type PinHashRow = Record<'pin_hash', unknown>
 
 function getServiceClient() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL
@@ -78,8 +78,9 @@ async function hasValidSession(supabase: ReturnType<typeof createClient>) {
     .not('pin_hash', 'is', null)
 
   if (error) throw error
-  return ((data ?? []) as PinHashRow[]).some((profile) => {
-    const pinHash = profile.pin_hash
+  const pinHashRows = (Array.isArray(data) ? data : []) as PinHashRow[]
+  return pinHashRows.some((profile) => {
+    const pinHash = profile['pin_hash']
     return typeof pinHash === 'string' && safeEqual(session, signSession(pinHash))
   })
 }
