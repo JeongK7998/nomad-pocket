@@ -2,6 +2,8 @@ import { supabase } from '@/lib/supabase'
 import type { Budget } from '@/types/database'
 
 const MONTH_NAMES = ['1월','2월','3월','4월','5월','6월','7월','8월','9월','10월','11월','12월']
+type ActualRow = { amount: number | string }
+type MonthlyActualRow = ActualRow & { date: string }
 
 // ── 시스템 목표 식별 헬퍼 ────────────────────────────────────────
 export function isSystemMonthlyGoal(b: Budget) {
@@ -210,7 +212,7 @@ export async function getActualForBudget(budget: Budget): Promise<number> {
 
   const { data, error } = await query
   if (error) throw error
-  return (data ?? []).reduce((sum, r) => sum + Number(r.amount), 0)
+  return ((data ?? []) as ActualRow[]).reduce((sum, r) => sum + Number(r.amount), 0)
 }
 
 export async function getMonthlyActuals(year: number): Promise<Record<number, number>> {
@@ -223,7 +225,7 @@ export async function getMonthlyActuals(year: number): Promise<Record<number, nu
   if (error) throw error
 
   const result: Record<number, number> = {}
-  for (const tx of data ?? []) {
+  for (const tx of (data ?? []) as MonthlyActualRow[]) {
     const m = parseInt(tx.date.slice(5, 7))
     result[m] = (result[m] ?? 0) + Number(tx.amount)
   }
